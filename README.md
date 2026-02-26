@@ -19,8 +19,10 @@ SquigDecode/
 ├── src/              # Model code and core algorithms
 ├── tests/            # Unit tests for signal generation and processing
 ├── data/             # Reference datasets and signal files
+├── results/          # Figures and results
 ├── notebooks/        # Jupyter notebooks for signal analysis
-└── README.md         # This file
+├── requirements.txt  # Python dependencies
+└── README.md         
 ```
 
 ## Usage
@@ -37,4 +39,4 @@ SquigDecode/
 
 ## License
 
-(License information to be added)
+MIT License – feel free to use, adapt, and share.
