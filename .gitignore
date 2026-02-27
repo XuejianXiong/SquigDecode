@@ -74,4 +74,6 @@ data/raw/
 data/processed/
 logs/
 *.log
+checkpoints/
 #results/
+models/*.pt
