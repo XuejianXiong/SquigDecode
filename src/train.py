@@ -5,30 +5,23 @@ This module implements the full training pipeline for SquigNet, including
 data loading, batch processing, CTC loss computation, and checkpoint management.
 """
 
+import pickle
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import pickle
-import numpy as np
-import matplotlib.pyplot as plt
-from pathlib import Path
-from typing import Dict, List, Tuple, Optional
-from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 from architecture import SquigNet
-from config import (
-    TRAIN_NUM_EPOCHS,
-    TRAIN_BATCH_SIZE,
-    TRAIN_LEARNING_RATE,
-    CHECKPOINT_DIR,
-    MODEL_DIR,
-    CHECKPOINT_FILE,
-    LOSS_PLOT_DPI,
-)
-
-from config import BASE_TO_INT, INT_TO_BASE
+from config import (BASE_TO_INT, CHECKPOINT_DIR, CHECKPOINT_FILE, INT_TO_BASE,
+                    LOSS_PLOT_DPI, MODEL_DIR, TRAIN_BATCH_SIZE,
+                    TRAIN_LEARNING_RATE, TRAIN_NUM_EPOCHS)
 
 
 class SquigDataset(Dataset):

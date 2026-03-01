@@ -5,20 +5,15 @@ This module provides functionality to simulate realistic nanopore squiggle signa
 from DNA sequences, including noise, drift, and base-specific signal characteristics.
 """
 
-import numpy as np
 import pickle
-import torch
-from typing import List, Tuple
 from pathlib import Path
+from typing import List, Tuple
 
-from config import (
-    BASE_PICOAMPERE_MAP,
-    DWELL_TIME_MEAN,
-    DWELL_TIME_STD,
-    MIN_DWELL_TIME,
-    NOISE_STD,
-    DRIFT_FACTOR,
-)
+import numpy as np
+import torch
+
+from config import (BASE_PICOAMPERE_MAP, DRIFT_FACTOR, DWELL_TIME_MEAN,
+                    DWELL_TIME_STD, MIN_DWELL_TIME, NOISE_STD)
 
 
 def get_dwell_time() -> int:

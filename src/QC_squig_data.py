@@ -22,10 +22,9 @@ try:
 except ImportError as e:
     raise ImportError("matplotlib is required for plotting; install with 'pip install matplotlib'.") from e
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 from config import BASE_PICOAMPERE_MAP
-
 
 
 def load_data(

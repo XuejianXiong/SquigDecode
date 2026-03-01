@@ -1,10 +1,9 @@
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 import torch
-
 
 # Ensure project's `src` directory is importable
 ROOT = Path(__file__).resolve().parents[1]

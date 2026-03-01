@@ -5,22 +5,19 @@ This module implements inference, decoding, and evaluation of the trained
 SquigNet model on test signals.
 """
 
+from difflib import SequenceMatcher
+from pathlib import Path
+from typing import Optional, Tuple
+
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
-import matplotlib.pyplot as plt
-from pathlib import Path
-from typing import Tuple, Optional
-from difflib import SequenceMatcher
 
 from architecture import SquigNet
-from data_simulator import (
-    generate_squiggle,
-    standardize_signal,
-    generate_random_dna_sequence,
-)
-
 from config import INT_TO_BASE
+from data_simulator import (generate_random_dna_sequence, generate_squiggle,
+                            standardize_signal)
 
 
 def greedy_decode(

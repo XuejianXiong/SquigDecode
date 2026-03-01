@@ -5,9 +5,10 @@ This module defines SquigNet, a hybrid CNN-RNN model designed to convert
 raw nanopore signals (squiggles) into accurate base calls.
 """
 
+from typing import Dict, Tuple
+
 import torch
 import torch.nn as nn
-from typing import Dict, Tuple
 
 
 class SquigNet(nn.Module):
