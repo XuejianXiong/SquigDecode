@@ -20,3 +20,30 @@ MIN_DWELL_TIME = 5   # The minimum samples to detect a base
 
 NOISE_STD = 3.5        # Gaussian noise in pA
 DRIFT_FACTOR = 0.01    # Simulates slight electrical fluctuations over time
+
+# Training configuration constants
+TRAIN_NUM_EPOCHS = 50          # Default number of epochs for training
+TRAIN_BATCH_SIZE = 32          # Default batch size for DataLoader
+TRAIN_LEARNING_RATE = 1e-3     # Learning rate for optimizer
+CHECKPOINT_DIR = "checkpoints"  # Directory to save checkpoint files
+MODEL_DIR = "models"            # Directory to save trained models
+CHECKPOINT_FILE = "checkpoint.pt"  # Default checkpoint filename
+LOSS_PLOT_DPI = 150            # DPI when saving loss curve
+
+
+# DNA-to-integer mapping for CTC loss
+BASE_TO_INT = {
+    'A': 1,
+    'C': 2,
+    'G': 3,
+    'T': 4,
+}
+
+# Base index to character mapping
+INT_TO_BASE = {
+    0: 'Blank',
+    1: 'A',
+    2: 'C',
+    3: 'G',
+    4: 'T',
+}
