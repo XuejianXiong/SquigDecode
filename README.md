@@ -18,17 +18,17 @@ The system consists of:
 ## 🏗️ Architecture: SquigNet
 The model handles 1D signal data through a multi-stage feature extraction and decoding pipeline:
 
-1. Dual 1D-CNN Blocks: Extract local features from the raw picoampere signal.
+1. **Dual 1D-CNN Blocks**: Extract local features from the raw picoampere signal.
 
  - Layers: Conv1d → BatchNorm → ReLU → MaxPool.
 
  - Purpose: Noise reduction and temporal downsampling.
 
-2. 2-Layer Bidirectional LSTM: Models the long-term dependencies of the DNA sequence.
+2. **2-Layer Bidirectional LSTM**: Models the long-term dependencies of the DNA sequence.
 
  - Logic: Uses forward and backward context to handle the 3-base sliding window physics of the pore.
 
-3. Linear Projection & CTC Loss: Maps the hidden states to 5 classes (Blank, A, C, G, T) using Connectionist Temporal Classification to handle variable-length sequences.
+3. **Linear Projection & CTC Loss**: Maps the hidden states to 5 classes (Blank, A, C, G, T) using Connectionist Temporal Classification to handle variable-length sequences.
 
 
 ------------------------------------------------
