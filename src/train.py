@@ -18,17 +18,17 @@ from torch.nn.utils.rnn import pad_sequence
 from tqdm import tqdm
 
 from architecture import SquigNet
+from config import (
+    TRAIN_NUM_EPOCHS,
+    TRAIN_BATCH_SIZE,
+    TRAIN_LEARNING_RATE,
+    CHECKPOINT_DIR,
+    MODEL_DIR,
+    CHECKPOINT_FILE,
+    LOSS_PLOT_DPI,
+)
 
-
-# DNA-to-integer mapping for CTC loss
-# 0 is reserved for CTC 'Blank' token
-BASE_TO_INT = {
-    'A': 1,
-    'C': 2,
-    'G': 3,
-    'T': 4,
-}
-INT_TO_BASE = {v: k for k, v in BASE_TO_INT.items()}
+from config import BASE_TO_INT, INT_TO_BASE
 
 
 class SquigDataset(Dataset):
@@ -304,11 +304,11 @@ def train_epoch(
 
 
 def train(
-    num_epochs: int = 50,
-    batch_size: int = 32,
-    learning_rate: float = 1e-3,
-    checkpoint_dir: Path = Path("checkpoints"),
-    model_dir: Path = Path("models"),
+    num_epochs: int = TRAIN_NUM_EPOCHS,
+    batch_size: int = TRAIN_BATCH_SIZE,
+    learning_rate: float = TRAIN_LEARNING_RATE,
+    checkpoint_dir: Path = Path(CHECKPOINT_DIR),
+    model_dir: Path = Path(MODEL_DIR),
     data_dir: Path = Path("data"),
     device: Optional[torch.device] = None,
     resume_checkpoint: Optional[Path] = None,
@@ -431,7 +431,7 @@ def train(
     plt.tight_layout()
 
     loss_plot_path = model_dir / "loss_curve.png"
-    plt.savefig(loss_plot_path, dpi=150, bbox_inches='tight')
+    plt.savefig(loss_plot_path, dpi=LOSS_PLOT_DPI, bbox_inches='tight')
     print(f"Loss curve saved: {loss_plot_path}")
 
     plt.show()
@@ -450,11 +450,11 @@ def train(
 if __name__ == "__main__":
     # Default training configuration
     train(
-        num_epochs=50,
-        batch_size=32,
-        learning_rate=1e-3,
-        checkpoint_dir=Path("checkpoints"),
-        model_dir=Path("models"),
+        num_epochs=TRAIN_NUM_EPOCHS,
+        batch_size=TRAIN_BATCH_SIZE,
+        learning_rate=TRAIN_LEARNING_RATE,
+        checkpoint_dir=Path(CHECKPOINT_DIR),
+        model_dir=Path(MODEL_DIR),
         data_dir=Path("data"),
-        resume_checkpoint=Path("checkpoints/checkpoint.pt"),
+        resume_checkpoint=Path(CHECKPOINT_DIR) / CHECKPOINT_FILE,
     )
