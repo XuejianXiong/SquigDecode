@@ -154,23 +154,21 @@ class SquigNet(nn.Module):
                   input signal_length)
         """
         total_params = sum(p.numel() for p in self.parameters())
-        trainable_params = sum(
-            p.numel() for p in self.parameters() if p.requires_grad
-        )
+        trainable_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
 
         return {
-            'total_parameters': total_params,
-            'trainable_parameters': trainable_params,
-            'num_classes': 5,
-            'architecture': 'CNN-BiLSTM Hybrid',
-            'input_shape': '(batch, 1, signal_length)',
-            'output_shape': '(batch, signal_length // 4, 5)',
-            'base_classes': {
-                '0': 'Blank (CTC)',
-                '1': 'A',
-                '2': 'C',
-                '3': 'G',
-                '4': 'T',
+            "total_parameters": total_params,
+            "trainable_parameters": trainable_params,
+            "num_classes": 5,
+            "architecture": "CNN-BiLSTM Hybrid",
+            "input_shape": "(batch, 1, signal_length)",
+            "output_shape": "(batch, signal_length // 4, 5)",
+            "base_classes": {
+                "0": "Blank (CTC)",
+                "1": "A",
+                "2": "C",
+                "3": "G",
+                "4": "T",
             },
         }
 
@@ -200,11 +198,11 @@ if __name__ == "__main__":
     model_info = model.get_model_info()
     print(f"\nModel Information:")
     for key, value in model_info.items():
-        if key != 'base_classes':
+        if key != "base_classes":
             print(f"  {key}: {value}")
 
     print(f"\nBase Classes:")
-    for idx, base_name in model_info['base_classes'].items():
+    for idx, base_name in model_info["base_classes"].items():
         print(f"  {idx}: {base_name}")
 
     # Test forward pass with synthetic data
@@ -227,7 +225,6 @@ if __name__ == "__main__":
     # Verify output shape matches expectations
     expected_shape = (batch_size, downsampled_length, 5)
     assert output.shape == expected_shape, (
-        f"Output shape {output.shape} does not match "
-        f"expected {expected_shape}"
+        f"Output shape {output.shape} does not match " f"expected {expected_shape}"
     )
     print("\n✓ Forward pass test successful!")

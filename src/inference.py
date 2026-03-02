@@ -15,9 +15,12 @@ import torch
 import torch.nn as nn
 
 from architecture import SquigNet
-from config import INT_TO_BASE
-from data_simulator import (generate_random_dna_sequence, generate_squiggle,
-                            standardize_signal)
+from config import INT_TO_BASE, USER_CONFIG
+from data_simulator import (
+    generate_random_dna_sequence,
+    generate_squiggle,
+    standardize_signal,
+)
 
 
 def greedy_decode(
@@ -58,11 +61,10 @@ def greedy_decode(
                 last_idx = idx
 
         # Remove blank tokens
-        decoded = [INT_TO_BASE[int(idx)] for idx in collapsed
-                   if idx != blank_idx]
+        decoded = [INT_TO_BASE[int(idx)] for idx in collapsed if idx != blank_idx]
 
         # Join to form DNA string
-        sequence = ''.join(decoded)
+        sequence = "".join(decoded)
         decoded_sequences.append(sequence)
 
     # Return first sequence (single sample inference)
@@ -82,9 +84,7 @@ def edit_distance(s1: str, s2: str) -> int:
     """
     matcher = SequenceMatcher(None, s1, s2)
     matching_blocks = matcher.get_matching_blocks()
-    return max(len(s1), len(s2)) - sum(
-        block.size for block in matching_blocks
-    )
+    return max(len(s1), len(s2)) - sum(block.size for block in matching_blocks)
 
 
 def calculate_accuracy(predicted: str, target: str) -> float:
@@ -109,7 +109,7 @@ def calculate_accuracy(predicted: str, target: str) -> float:
 
 
 def load_model(
-    model_path: Path = Path("models/squig_model.pt"),
+    model_path: Path = Path(USER_CONFIG.get("model_path", "models/squig_model.pt")),
     device: torch.device = None,
 ) -> SquigNet:
     """
@@ -126,7 +126,7 @@ def load_model(
         FileNotFoundError: If model file does not exist
     """
     if device is None:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if not model_path.exists():
         raise FileNotFoundError(f"Model not found: {model_path}")
@@ -140,7 +140,7 @@ def load_model(
 
 
 def generate_test_sample(
-    noise_std: float = 1.0,
+    noise_std: float = USER_CONFIG.get("noise_std", 0.0) + 3,
     scale: float = 1.0,
     shift: float = 0.0,
 ) -> Tuple[np.ndarray, str]:
@@ -202,13 +202,18 @@ def run_inference(
         torch.Tensor: Model output logits of shape (1, downsampled_length, 5)
     """
     if device is None:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Convert signal to tensor and add batch/channel dimensions
-    signal_tensor = torch.tensor(
-        signal,
-        dtype=torch.float32,
-    ).unsqueeze(0).unsqueeze(0).to(device)  # (1, 1, signal_length)
+    signal_tensor = (
+        torch.tensor(
+            signal,
+            dtype=torch.float32,
+        )
+        .unsqueeze(0)
+        .unsqueeze(0)
+        .to(device)
+    )  # (1, 1, signal_length)
 
     # Forward pass
     with torch.no_grad():
@@ -238,20 +243,27 @@ def plot_inference_results(
 
     # Plot signal
     sample_indices = np.arange(len(signal))
-    ax.plot(sample_indices, signal, linewidth=1.5, color='darkblue',
-            alpha=0.8, label='Signal')
+    ax.plot(
+        sample_indices,
+        signal,
+        linewidth=1.5,
+        color="darkblue",
+        alpha=0.8,
+        label="Signal",
+    )
 
-    ax.set_xlabel('Sample Index', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Standardized Signal (pA)', fontsize=12, fontweight='bold')
-    ax.set_title('Inference Result: Signal with Predictions',
-                 fontsize=14, fontweight='bold')
-    ax.grid(True, alpha=0.3, linestyle=':', linewidth=0.5)
-    ax.legend(loc='upper right', fontsize=10)
+    ax.set_xlabel("Sample Index", fontsize=12, fontweight="bold")
+    ax.set_ylabel("Standardized Signal (pA)", fontsize=12, fontweight="bold")
+    ax.set_title(
+        "Inference Result: Signal with Predictions", fontsize=14, fontweight="bold"
+    )
+    ax.grid(True, alpha=0.3, linestyle=":", linewidth=0.5)
+    ax.legend(loc="upper right", fontsize=10)
 
     # Add sequence info as text box
     success = accuracy >= 0.8
-    color = '#90EE90' if success else '#FFB6C6'
-    status = 'PASS ✓' if success else 'FAIL ✗'
+    color = "#90EE90" if success else "#FFB6C6"
+    status = "PASS ✓" if success else "FAIL ✗"
 
     info_text = (
         f"Target:    {target}\n"
@@ -261,16 +273,24 @@ def plot_inference_results(
     )
 
     ax.text(
-        0.02, 0.98, info_text,
+        0.02,
+        0.98,
+        info_text,
         transform=ax.transAxes,
-        fontsize=10, fontfamily='monospace',
-        verticalalignment='top',
-        bbox=dict(boxstyle='round', facecolor=color, alpha=0.8,
-                  edgecolor='black', linewidth=1.5),
+        fontsize=10,
+        fontfamily="monospace",
+        verticalalignment="top",
+        bbox=dict(
+            boxstyle="round",
+            facecolor=color,
+            alpha=0.8,
+            edgecolor="black",
+            linewidth=1.5,
+        ),
     )
 
     plt.tight_layout()
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
     print(f"Inference plot saved: {output_path}")
     plt.show()
 
@@ -287,7 +307,7 @@ def main(
         device: torch.device for computation
     """
     if device is None:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     print("=" * 70)
     print("SquigNet Inference & Evaluation")
@@ -305,9 +325,11 @@ def main(
 
     # Generate test sample with adversarial conditions
     print("Generating test sample with adversarial conditions...")
-    print("  Noise level (σ): 5.0 (vs. training: 3.5)")
+    adv_noise = USER_CONFIG.get("adversarial_noise", 3.0)
+    train_noise = USER_CONFIG.get("noise_std", 3.5)
+    print(f"  Noise level (\u03c3): {adv_noise} (vs. training: {train_noise})")
     signal, target_sequence = generate_test_sample(
-        noise_std=3.0,  # Higher noise for adversarial testing
+        noise_std=adv_noise,  # Higher noise for adversarial testing
         scale=1.0,
         shift=0.0,
     )

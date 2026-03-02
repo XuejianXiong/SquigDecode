@@ -54,6 +54,7 @@ SquigDecode/
 ├── models/           # Trained model
 ├── results/          # Figures and results
 ├── notebooks/        # Jupyter notebooks for signal analysis
+├── pyproject.toml    # Python dependencies
 ├── requirements.txt  # Python dependencies
 └── README.md         
 ```
@@ -81,11 +82,17 @@ SquigDecode/
 ------------------------------------------------
 ## ⚙️ How to Run
 
-1. Install Dependencies: pip install -r requirements.txt
+1. Install Dependencies: 
+   ```
+   pip install -e . 
+   or 
+   pip install -r requirements.txt
+   ```
+2. Train the Model: 
+   `python src/train.py`
 
-2. Train the Model: python src/train.py
-
-3. Run Inference: python src/inference.py
+3. Run Inference: 
+   `python src/inference.py`
 
 
 ------------------------------------------------

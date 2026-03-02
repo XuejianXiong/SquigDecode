@@ -1,0 +1,15 @@
+{
+  "train_num_epochs": 50,
+  "train_batch_size": 32,
+  "train_learning_rate": 0.001,
+  "checkpoint_dir": "checkpoints",
+  "model_dir": "models",
+  "data_dir": "data",
+  "model_path": "models/squig_model.pt",
+  "noise_std": 3.5,
+  "adversarial_noise": 3.0,
+  "num_sequences": 1000,
+  "min_length": 50,
+  "max_length": 100,
+  "drift_factor": 0.01
+}
