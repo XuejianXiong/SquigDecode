@@ -14,11 +14,16 @@ import torch
 
 from config import (
     BASE_PICOAMPERE_MAP,
-    DRIFT_FACTOR,
+    NUM_SEQUENCES,
+    MIN_LENGTH,
+    MAX_LENGTH,
     DWELL_TIME_MEAN,
     DWELL_TIME_STD,
     MIN_DWELL_TIME,
+    WEIGHTS,
     NOISE_STD,
+    DRIFT_FACTOR,
+    WINDOW_SIZE,
     USER_CONFIG,
 )
 
@@ -64,7 +69,7 @@ def _step_map_and_expand(dna_sequence: str) -> Tuple[np.ndarray, List[int]]:
 
 
 def _step_sliding_window_filter(
-    signal: np.ndarray, weights: Tuple[float, float, float] = (0.7, 0.2, 0.1)
+    signal: np.ndarray, weights: Tuple[float, float, float] = WEIGHTS
 ) -> np.ndarray:
     """Step 3: Apply a 3-sample sliding window filter (current, prev, next).
 
@@ -81,22 +86,24 @@ def _step_sliding_window_filter(
     return filtered
 
 
-def _step_apply_drift(
-    signal: np.ndarray, drift_factor: float = DRIFT_FACTOR
+def _step_add_noise(
+    signal: np.ndarray, 
+    drift_factor: float = DRIFT_FACTOR,
+    noise_std: float = NOISE_STD
 ) -> np.ndarray:
     """Step 4a: Add linear drift proportional to the mean signal."""
     mean_signal = np.mean(signal)
     drift = np.linspace(0, drift_factor * mean_signal, len(signal))
-    return signal + drift
 
-
-def _step_add_noise(signal: np.ndarray, noise_std: float = NOISE_STD) -> np.ndarray:
     """Step 4b: Add Gaussian noise with provided standard deviation."""
     noise = np.random.normal(0, noise_std, len(signal))
-    return signal + noise
+
+    return signal + drift + noise
 
 
-def _step_smooth(signal: np.ndarray, window_size: int = 3) -> np.ndarray:
+def _step_smooth(
+    signal: np.ndarray, window_size: int = WINDOW_SIZE
+) -> np.ndarray:
     """Step 5: Smooth signal with a moving average of given window size."""
     smoothed = np.zeros_like(signal)
     for i in range(len(signal)):
@@ -119,12 +126,11 @@ def generate_squiggle(dna_sequence: str) -> Tuple[np.ndarray, List[int]]:
     # Step 3: sliding-window filtering
     signal = _step_sliding_window_filter(signal)
 
-    # Step 4a/4b: add drift then noise
-    signal = _step_apply_drift(signal, DRIFT_FACTOR)
-    signal = _step_add_noise(signal, NOISE_STD)
+    # Step 4: add drift and noise
+    signal = _step_add_noise(signal, DRIFT_FACTOR, NOISE_STD)
 
     # Step 5: smoothing
-    signal = _step_smooth(signal, window_size=3)
+    signal = _step_smooth(signal, WINDOW_SIZE)
 
     return signal, dwell_times
 
@@ -225,9 +231,9 @@ def main() -> None:
     - data/metadata.pkl: Metadata about the dataset
     """
     # Allow overriding dataset generation params via src/input.json
-    num_sequences = int(USER_CONFIG.get("num_sequences", 1000))
-    min_length = int(USER_CONFIG.get("min_length", 50))
-    max_length = int(USER_CONFIG.get("max_length", 100))
+    num_sequences = int(USER_CONFIG.get("num_sequences", NUM_SEQUENCES))
+    min_length = int(USER_CONFIG.get("min_length", MIN_LENGTH))
+    max_length = int(USER_CONFIG.get("max_length", MAX_LENGTH))
 
     print(f"Generating {num_sequences} DNA sequences and squiggle signals...")
 

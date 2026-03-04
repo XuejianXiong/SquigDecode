@@ -140,7 +140,7 @@ def load_model(
 
 
 def generate_test_sample(
-    noise_std: float = USER_CONFIG.get("noise_std", 0.0) + 3,
+    adv_noise: float = 3.0,
     scale: float = 1.0,
     shift: float = 0.0,
 ) -> Tuple[np.ndarray, str]:
@@ -151,8 +151,8 @@ def generate_test_sample(
     and signal scaling/shifting that may not be present in training.
 
     Args:
-        noise_std: Standard deviation of additional Gaussian noise.
-                   Default 1.0.
+        adv_noise: Standard deviation of additional Gaussian noise.
+                   Default 3.0.
         scale: Scaling factor for signal amplitude. Default 1.0 (no change).
         shift: DC offset added to signal. Default 0.0 (no change).
 
@@ -174,7 +174,7 @@ def generate_test_sample(
     # Add additional Gaussian noise for adversarial testing
     additional_noise = np.random.normal(
         0,
-        noise_std / 10.0,
+        adv_noise / 10.0,
         len(standardized_signal),
     )
     adversarial_signal = standardized_signal + additional_noise
@@ -325,11 +325,11 @@ def main(
 
     # Generate test sample with adversarial conditions
     print("Generating test sample with adversarial conditions...")
-    adv_noise = USER_CONFIG.get("adversarial_noise", 3.0)
     train_noise = USER_CONFIG.get("noise_std", 3.5)
-    print(f"  Noise level (\u03c3): {adv_noise} (vs. training: {train_noise})")
+    adv_noise = USER_CONFIG.get("adversarial_noise", 3.0)
+    print(f"  Noise level (\u03c3): {adv_noise+train_noise} (vs. training: {train_noise})")
     signal, target_sequence = generate_test_sample(
-        noise_std=adv_noise,  # Higher noise for adversarial testing
+        adv_noise=adv_noise,  # Higher noise for adversarial testing
         scale=1.0,
         shift=0.0,
     )

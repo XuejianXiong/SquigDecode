@@ -424,6 +424,32 @@ def train(
     torch.save(model.state_dict(), model_path)
     print(f"\nFinal model saved: {model_path}")
 
+    # Save loss curve
+    loss_plot_path = print_loss_curve(losses, model_dir)
+
+    # Print summary
+    print("\n" + "=" * 70)
+    print("Training Complete!")
+    print("=" * 70)
+    print(f"Final Loss: {losses[-1]:.4f}")
+    print(f"Best Loss: {min(losses):.4f} (Epoch {np.argmin(losses) + 1})")
+    print(f"Model saved to: {model_path}")
+    print(f"Loss curve saved to: {loss_plot_path}")
+    print("=" * 70)
+
+
+def print_loss_curve(losses: List[float], model_dir: Path) -> Path:
+    """
+    Generate and save a loss curve plot.
+
+    Args:
+        losses: List of loss values for each epoch
+        model_dir: Path to the model directory where the plot will be saved
+    
+    Returns:
+        loss_plot_path: Path to the saved loss curve image
+    """
+
     # Plot loss curve
     print("Generating loss curve...")
     plt.figure(figsize=(10, 6))
@@ -448,15 +474,7 @@ def train(
 
     plt.show()
 
-    # Print summary
-    print("\n" + "=" * 70)
-    print("Training Complete!")
-    print("=" * 70)
-    print(f"Final Loss: {losses[-1]:.4f}")
-    print(f"Best Loss: {min(losses):.4f} (Epoch {np.argmin(losses) + 1})")
-    print(f"Model saved to: {model_path}")
-    print(f"Loss curve saved to: {loss_plot_path}")
-    print("=" * 70)
+    return loss_plot_path
 
 
 if __name__ == "__main__":

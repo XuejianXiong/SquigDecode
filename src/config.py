@@ -16,12 +16,20 @@ BASE_PICOAMPERE_MAP = {
 }
 
 # Simulation Parameters
-DWELL_TIME_MEAN = 15
+NUM_SEQUENCES = 1000 # Number of DNA sequences to simulate
+MIN_LENGTH = 50 # Minimum length of DNA sequences
+MAX_LENGTH = 100 # Maximum length of DNA sequences
+
+DWELL_TIME_MEAN = 15 # Average number of samples a base is detected (depends on sequencing speed)
 DWELL_TIME_STD = 4  # The "spread" of how fast the DNA moves
 MIN_DWELL_TIME = 5  # The minimum samples to detect a base
 
+WEIGHTS = (0.7, 0.2, 0.1) # Weights for the weighted random choice of bases (A, C, G, T)
+
 NOISE_STD = 3.5  # Gaussian noise in pA
 DRIFT_FACTOR = 0.01  # Simulates slight electrical fluctuations over time
+
+WINDOW_SIZE = 3  # Size of the sliding window for smoothing
 
 # Training configuration constants
 TRAIN_NUM_EPOCHS = 50  # Default number of epochs for training
