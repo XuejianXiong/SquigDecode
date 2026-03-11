@@ -19,9 +19,19 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 from architecture import SquigNet
-from config import (BASE_TO_INT, CHECKPOINT_DIR, CHECKPOINT_FILE, INT_TO_BASE,
-                    LOSS_PLOT_DPI, MODEL_DIR, TRAIN_BATCH_SIZE,
-                    TRAIN_LEARNING_RATE, TRAIN_NUM_EPOCHS)
+from config import (
+    BASE_TO_INT,
+    CHECKPOINT_DIR,
+    CHECKPOINT_FILE,
+    LOSS_PLOT_DPI,
+    MODEL_DIR,
+    MODEL_FILE,
+    TRAIN_PATH,
+    TRAIN_BATCH_SIZE,
+    TRAIN_LEARNING_RATE,
+    TRAIN_NUM_EPOCHS,
+    USER_CONFIG,
+)
 
 
 class SquigDataset(Dataset):
@@ -73,7 +83,9 @@ class SquigDataset(Dataset):
         signal = torch.tensor(
             self.signals[idx],
             dtype=torch.float32,
-        ).unsqueeze(0)  # Add channel dimension: (signal_length,) -> (1, signal_length)
+        ).unsqueeze(
+            0
+        )  # Add channel dimension: (signal_length,) -> (1, signal_length)
 
         # Encode DNA sequence to integers
         sequence = self.sequences[idx]
@@ -115,7 +127,7 @@ def collate_batch(
     for s in signals:
         # s is (1, signal_length)
         padded = torch.zeros(1, max_signal_len)
-        padded[:, :s.shape[1]] = s
+        padded[:, : s.shape[1]] = s
         batch_signals.append(padded)
 
     signals_padded = torch.stack(batch_signals)  # (batch, 1, max_signal_length)
@@ -143,13 +155,14 @@ def collate_batch(
 
 
 def load_training_data(
-    data_dir: Path = Path("data"),
+    data_dir: Path = Path("data/train"),
 ) -> Tuple[List[np.ndarray], List[str]]:
     """
     Load pre-generated training signals and sequences.
 
     Args:
-        data_dir: Path to directory containing signals.pt and sequences.pkl
+        data_dir: Path to directory containing signals.pt and sequences.pkl.
+            By default this points to the train split under data/train.
 
     Returns:
         Tuple containing:
@@ -195,10 +208,10 @@ def create_checkpoint(
         checkpoint_path: Path to save checkpoint
     """
     checkpoint = {
-        'epoch': epoch,
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'losses': losses,
+        "epoch": epoch,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "losses": losses,
     }
     torch.save(checkpoint, checkpoint_path)
     print(f"Checkpoint saved: {checkpoint_path}")
@@ -222,10 +235,10 @@ def load_checkpoint(
     """
     checkpoint = torch.load(checkpoint_path)
     return (
-        checkpoint['epoch'],
-        checkpoint['model_state_dict'],
-        checkpoint['optimizer_state_dict'],
-        checkpoint['losses'],
+        checkpoint["epoch"],
+        checkpoint["model_state_dict"],
+        checkpoint["optimizer_state_dict"],
+        checkpoint["losses"],
     )
 
 
@@ -290,7 +303,7 @@ def train_epoch(
         total_loss += loss.item()
         num_batches += 1
 
-        progress_bar.set_postfix({'loss': f'{loss.item():.4f}'})
+        progress_bar.set_postfix({"loss": f"{loss.item():.4f}"})
 
     avg_loss = total_loss / num_batches
     return avg_loss
@@ -302,7 +315,8 @@ def train(
     learning_rate: float = TRAIN_LEARNING_RATE,
     checkpoint_dir: Path = Path(CHECKPOINT_DIR),
     model_dir: Path = Path(MODEL_DIR),
-    data_dir: Path = Path("data"),
+    data_dir: Path = Path(TRAIN_PATH),
+    model_file: Path = Path(MODEL_FILE),
     device: Optional[torch.device] = None,
     resume_checkpoint: Optional[Path] = None,
 ) -> None:
@@ -316,12 +330,23 @@ def train(
         checkpoint_dir: Directory to save training checkpoints
         model_dir: Directory to save final model
         data_dir: Directory containing training data
+        model_file: Path to save the final trained model
         device: torch.device (cpu or cuda). Auto-select if None.
         resume_checkpoint: Path to checkpoint file to resume training from
     """
+    # Apply user overrides from input.json if present
+    num_epochs = USER_CONFIG.get("train_num_epochs", num_epochs)
+    batch_size = USER_CONFIG.get("train_batch_size", batch_size)
+    learning_rate = USER_CONFIG.get("train_learning_rate", learning_rate)
+    checkpoint_dir = Path(USER_CONFIG.get("checkpoint_dir", str(checkpoint_dir)))
+    model_dir = Path(USER_CONFIG.get("model_dir", str(model_dir)))
+    data_dir = Path(USER_CONFIG.get("data_dir", str(data_dir)))
+    model_file = Path(USER_CONFIG.get("model_file", str(model_file)))
+    
+
     # Setup device
     if device is None:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
     # Create output directories
@@ -388,15 +413,10 @@ def train(
 
         # Print progress every 5 epochs
         if (epoch + 1) % 5 == 0:
-            print(
-                f"Epoch [{epoch + 1}/{num_epochs}] - "
-                f"Avg Loss: {avg_loss:.4f}"
-            )
+            print(f"Epoch [{epoch + 1}/{num_epochs}] - " f"Avg Loss: {avg_loss:.4f}")
 
         # Save checkpoint every epoch
-        checkpoint_path = (
-            checkpoint_dir / f"checkpoint_epoch_{epoch + 1}.pt"
-        )
+        checkpoint_path = checkpoint_dir / f"checkpoint_epoch_{epoch + 1}.pt"
         create_checkpoint(
             model,
             optimizer,
@@ -406,28 +426,11 @@ def train(
         )
 
     # Save final model
-    model_path = model_dir / "squig_model.pt"
-    torch.save(model.state_dict(), model_path)
-    print(f"\nFinal model saved: {model_path}")
+    torch.save(model.state_dict(), model_dir / model_file)
+    print(f"\nFinal model saved: {model_dir / model_file}")
 
-    # Plot loss curve
-    print("Generating loss curve...")
-    plt.figure(figsize=(10, 6))
-    plt.plot(range(1, len(losses) + 1), losses, linewidth=2, color='steelblue')
-    plt.axhline(y=np.mean(losses), color='red', linestyle='--',
-                linewidth=2, label=f'Mean Loss: {np.mean(losses):.4f}')
-    plt.xlabel('Epoch', fontsize=12, fontweight='bold')
-    plt.ylabel('CTC Loss', fontsize=12, fontweight='bold')
-    plt.title('SquigNet Training Loss Curve', fontsize=14, fontweight='bold')
-    plt.grid(True, alpha=0.3)
-    plt.legend(fontsize=10)
-    plt.tight_layout()
-
-    loss_plot_path = model_dir / "loss_curve.png"
-    plt.savefig(loss_plot_path, dpi=LOSS_PLOT_DPI, bbox_inches='tight')
-    print(f"Loss curve saved: {loss_plot_path}")
-
-    plt.show()
+    # Save loss curve
+    loss_plot_path = print_loss_curve(losses, model_dir)
 
     # Print summary
     print("\n" + "=" * 70)
@@ -435,9 +438,48 @@ def train(
     print("=" * 70)
     print(f"Final Loss: {losses[-1]:.4f}")
     print(f"Best Loss: {min(losses):.4f} (Epoch {np.argmin(losses) + 1})")
-    print(f"Model saved to: {model_path}")
+    print(f"Model saved to: {model_dir / model_file}")
     print(f"Loss curve saved to: {loss_plot_path}")
     print("=" * 70)
+
+
+def print_loss_curve(losses: List[float], model_dir: Path) -> Path:
+    """
+    Generate and save a loss curve plot.
+
+    Args:
+        losses: List of loss values for each epoch
+        model_dir: Path to the model directory where the plot will be saved
+    
+    Returns:
+        loss_plot_path: Path to the saved loss curve image
+    """
+
+    # Plot loss curve
+    print("Generating loss curve...")
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1, len(losses) + 1), losses, linewidth=2, color="steelblue")
+    plt.axhline(
+        y=np.mean(losses),
+        color="red",
+        linestyle="--",
+        linewidth=2,
+        label=f"Mean Loss: {np.mean(losses):.4f}",
+    )
+    plt.xlabel("Epoch", fontsize=12, fontweight="bold")
+    plt.ylabel("CTC Loss", fontsize=12, fontweight="bold")
+    plt.title("SquigNet Training Loss Curve", fontsize=14, fontweight="bold")
+    plt.grid(True, alpha=0.3)
+    plt.legend(fontsize=10)
+    plt.tight_layout()
+
+    loss_plot_path = model_dir / "loss_curve.png"
+    plt.savefig(loss_plot_path, dpi=LOSS_PLOT_DPI, bbox_inches="tight")
+    print(f"Loss curve saved: {loss_plot_path}")
+
+    plt.show()
+
+    return loss_plot_path
 
 
 if __name__ == "__main__":
@@ -448,6 +490,7 @@ if __name__ == "__main__":
         learning_rate=TRAIN_LEARNING_RATE,
         checkpoint_dir=Path(CHECKPOINT_DIR),
         model_dir=Path(MODEL_DIR),
-        data_dir=Path("data"),
+        data_dir=Path(TRAIN_PATH),
+        model_file=Path(MODEL_FILE),
         resume_checkpoint=Path(CHECKPOINT_DIR) / CHECKPOINT_FILE,
     )

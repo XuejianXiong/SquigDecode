@@ -70,7 +70,7 @@ env/
 Thumbs.db
 
 # Data and logs
-data/*.pt
+data/
 logs/
 *.log
 checkpoints/
