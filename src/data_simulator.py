@@ -1,8 +1,10 @@
 """
-SquigDecode: Data Simulator for Nanopore Signal Generation
+SquigDecode: Data Simulator for Nanopore Signal Generation.
 
-This module provides functionality to simulate realistic nanopore squiggle signals
-from DNA sequences, including noise, drift, and base-specific signal characteristics.
+This module provides functionality to simulate realistic nanopore squiggle
+signals from DNA sequences, including noise, drift, and base-specific signal
+characteristics. It also supports splitting the generated dataset into
+explicit train and test subsets saved under the `data/` directory.
 """
 
 import pickle
@@ -20,15 +22,21 @@ from config import (
     DWELL_TIME_MEAN,
     DWELL_TIME_STD,
     MIN_DWELL_TIME,
+    TRAIN_PATH,
+    TEST_PATH,
     WEIGHTS,
     NOISE_STD,
     DRIFT_FACTOR,
     WINDOW_SIZE,
+    DATASET_TRAIN_RATIO,
+    DATASET_RANDOM_SEED,
+    DATASET_TRAIN_NOISE_STD_MIN,
+    DATASET_TRAIN_NOISE_STD_MAX,
     USER_CONFIG,
 )
 
 
-# apply optional overrides from user config
+# Apply optional overrides from user config.
 NOISE_STD = USER_CONFIG.get("noise_std", NOISE_STD)
 DRIFT_FACTOR = USER_CONFIG.get("drift_factor", DRIFT_FACTOR)
 
@@ -69,7 +77,8 @@ def _step_map_and_expand(dna_sequence: str) -> Tuple[np.ndarray, List[int]]:
 
 
 def _step_sliding_window_filter(
-    signal: np.ndarray, weights: Tuple[float, float, float] = WEIGHTS
+    signal: np.ndarray,
+    weights: Tuple[float, float, float] = WEIGHTS,
 ) -> np.ndarray:
     """Step 3: Apply a 3-sample sliding window filter (current, prev, next).
 
@@ -87,9 +96,9 @@ def _step_sliding_window_filter(
 
 
 def _step_add_noise(
-    signal: np.ndarray, 
+    signal: np.ndarray,
     drift_factor: float = DRIFT_FACTOR,
-    noise_std: float = NOISE_STD
+    noise_std: float = NOISE_STD,
 ) -> np.ndarray:
     """Step 4a: Add linear drift proportional to the mean signal."""
     mean_signal = np.mean(signal)
@@ -101,9 +110,7 @@ def _step_add_noise(
     return signal + drift + noise
 
 
-def _step_smooth(
-    signal: np.ndarray, window_size: int = WINDOW_SIZE
-) -> np.ndarray:
+def _step_smooth(signal: np.ndarray, window_size: int = WINDOW_SIZE) -> np.ndarray:
     """Step 5: Smooth signal with a moving average of given window size."""
     smoothed = np.zeros_like(signal)
     for i in range(len(signal)):
@@ -114,7 +121,12 @@ def _step_smooth(
     return smoothed
 
 
-def generate_squiggle(dna_sequence: str) -> Tuple[np.ndarray, List[int]]:
+def generate_squiggle(
+    dna_sequence: str,
+    drift_factor: float = DRIFT_FACTOR,
+    noise_std: float = NOISE_STD,
+    window_size: int = WINDOW_SIZE,
+) -> Tuple[np.ndarray, List[int]]:
     """Generate a realistic nanopore squiggle signal from a DNA sequence.
 
     The function composes modular steps implemented as helper functions to make
@@ -127,10 +139,10 @@ def generate_squiggle(dna_sequence: str) -> Tuple[np.ndarray, List[int]]:
     signal = _step_sliding_window_filter(signal)
 
     # Step 4: add drift and noise
-    signal = _step_add_noise(signal, DRIFT_FACTOR, NOISE_STD)
+    signal = _step_add_noise(signal, drift_factor, noise_std)
 
     # Step 5: smoothing
-    signal = _step_smooth(signal, WINDOW_SIZE)
+    signal = _step_smooth(signal, window_size)
 
     return signal, dwell_times
 
@@ -217,23 +229,95 @@ def save_dataset(
     print(f"Metadata saved to {output_dir / 'metadata.pkl'}")
 
 
+def split_dataset(
+    all_signals: List[np.ndarray],
+    all_sequences: List[str],
+    all_dwell_times: List[List[int]],
+    train_ratio: float,
+) -> Tuple[
+    Tuple[List[np.ndarray], List[str], List[List[int]]],
+    Tuple[List[np.ndarray], List[str], List[List[int]]],
+]:
+    """
+    Split full dataset into train and test subsets.
+
+    Args:
+        all_signals: List of standardized signal arrays.
+        all_sequences: List of corresponding DNA sequences.
+        all_dwell_times: List of dwell-time lists per sequence.
+        train_ratio: Fraction of samples to allocate to the train split.
+
+    Returns:
+        Tuple of ((train_signals, train_sequences, train_dwell_times),
+                  (test_signals, test_sequences, test_dwell_times)).
+    """
+    if not 0.0 < train_ratio < 1.0:
+        raise ValueError("train_ratio must be between 0 and 1.")
+
+    num_samples = len(all_signals)
+    if num_samples == 0:
+        raise ValueError("Cannot split an empty dataset.")
+
+    indices = np.random.permutation(num_samples)
+    split_idx = int(num_samples * train_ratio)
+
+    train_idx = indices[:split_idx]
+    test_idx = indices[split_idx:]
+
+    def _subset(
+        idx_array: np.ndarray,
+    ) -> Tuple[List[np.ndarray], List[str], List[List[int]]]:
+        return (
+            [all_signals[i] for i in idx_array],
+            [all_sequences[i] for i in idx_array],
+            [all_dwell_times[i] for i in idx_array],
+        )
+
+    train_data = _subset(train_idx)
+    test_data = _subset(test_idx)
+    return train_data, test_data
+
+
 def main() -> None:
     """
     Main execution: Generate a dataset of simulated squiggle signals.
 
-    Generates 1000 random DNA sequences (50-100 bases each),
-    creates their corresponding squiggle signals, standardizes them,
-    and saves the dataset for training as PyTorch tensors and pickle files.
+    Generates random DNA sequences (50–100 bases each), creates their
+    corresponding squiggle signals with configurable noise, standardizes
+    them, and saves separate train and test datasets under `data/train/`
+    and `data/test/`.
 
-    Output files:
-    - data/signals.pt: PyTorch tensor of standardized signals
-    - data/sequences.pkl: Pickle file of DNA sequences
-    - data/metadata.pkl: Metadata about the dataset
+    Output structure:
+    - data/train/signals.pt, sequences.pkl, dwell_times.pkl, metadata.pkl
+    - data/test/signals.pt, sequences.pkl, dwell_times.pkl, metadata.pkl
     """
-    # Allow overriding dataset generation params via src/input.json
+    # Allow overriding dataset generation params via src/input.json.
     num_sequences = int(USER_CONFIG.get("num_sequences", NUM_SEQUENCES))
     min_length = int(USER_CONFIG.get("min_length", MIN_LENGTH))
     max_length = int(USER_CONFIG.get("max_length", MAX_LENGTH))
+
+    # Train/test split and noise configuration with config defaults.
+    train_ratio = float(
+        USER_CONFIG.get("train_ratio", DATASET_TRAIN_RATIO),
+    )
+    random_seed = int(
+        USER_CONFIG.get("random_seed", DATASET_RANDOM_SEED),
+    )
+    noise_std_min = float(
+        USER_CONFIG.get(
+            "train_noise_std_min",
+            DATASET_TRAIN_NOISE_STD_MIN,
+        ),
+    )
+    noise_std_max = float(
+        USER_CONFIG.get(
+            "train_noise_std_max",
+            DATASET_TRAIN_NOISE_STD_MAX,
+        ),
+    )
+
+    # Seed numpy for reproducible dataset generation.
+    np.random.seed(random_seed)
 
     print(f"Generating {num_sequences} DNA sequences and squiggle signals...")
 
@@ -246,8 +330,18 @@ def main() -> None:
         sequence_length = np.random.randint(min_length, max_length + 1)
         dna_sequence = generate_random_dna_sequence(sequence_length)
 
-        # Generate squiggle signal
-        signal, dwell_times = generate_squiggle(dna_sequence)
+        # Sample per-sequence noise standard deviation for robustness.
+        noise_std_value = float(
+            np.random.uniform(low=noise_std_min, high=noise_std_max)
+        )
+
+        # Generate squiggle signal with sampled noise.
+        signal, dwell_times = generate_squiggle(
+            dna_sequence=dna_sequence,
+            drift_factor=DRIFT_FACTOR,
+            noise_std=noise_std_value,
+            window_size=WINDOW_SIZE,
+        )
 
         # Standardize signal
         standardized_signal = standardize_signal(signal)
@@ -267,12 +361,31 @@ def main() -> None:
         f"Signal lengths range: {min(signal_lengths)} - {max(signal_lengths)} samples"
     )
 
-    # Create output directory
-    output_dir = Path(__file__).parent.parent / "data"
-    output_dir.mkdir(exist_ok=True)
+    # Base output directory and train/test subdirectories.
+    base_output_dir = Path(__file__).parent.parent 
+    train_dir = base_output_dir / Path(USER_CONFIG.get("data_dir", TRAIN_PATH))
+    test_dir = base_output_dir / Path(USER_CONFIG.get("test_data_dir", TEST_PATH))
+    train_dir.mkdir(parents=True, exist_ok=True)
+    test_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save dataset to disk
-    save_dataset(all_signals, all_sequences, all_dwell_times, output_dir)
+    # Split into train and test datasets.
+    (
+        (train_signals, train_sequences, train_dwell_times),
+        (test_signals, test_sequences, test_dwell_times),
+    ) = split_dataset(all_signals, all_sequences, all_dwell_times, train_ratio)
+
+    print(
+        f"\nTrain/Test split: {len(train_signals)} train / "
+        f"{len(test_signals)} test sequences "
+        f"(train_ratio={train_ratio:.2f})"
+    )
+
+    # Save train and test datasets to disk.
+    print("\nSaving train dataset...")
+    save_dataset(train_signals, train_sequences, train_dwell_times, train_dir)
+
+    print("\nSaving test dataset...")
+    save_dataset(test_signals, test_sequences, test_dwell_times, test_dir)
 
 
 if __name__ == "__main__":

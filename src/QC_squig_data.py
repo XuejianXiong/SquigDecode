@@ -30,7 +30,7 @@ except ImportError as e:
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from config import BASE_PICOAMPERE_MAP
+from config import BASE_PICOAMPERE_MAP, TRAIN_PATH, USER_CONFIG
 
 
 def load_data(
@@ -53,7 +53,8 @@ def load_data(
         FileNotFoundError: If required data files are not found
     """
     if data_dir is None:
-        data_dir = Path(__file__).parent.parent / "data"
+        base_output_dir = Path(__file__).parent.parent 
+        data_dir = base_output_dir / Path(USER_CONFIG.get("data_dir", TRAIN_PATH))
     else:
         data_dir = Path(data_dir)
 

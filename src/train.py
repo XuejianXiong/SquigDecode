@@ -23,9 +23,10 @@ from config import (
     BASE_TO_INT,
     CHECKPOINT_DIR,
     CHECKPOINT_FILE,
-    INT_TO_BASE,
     LOSS_PLOT_DPI,
     MODEL_DIR,
+    MODEL_FILE,
+    TRAIN_PATH,
     TRAIN_BATCH_SIZE,
     TRAIN_LEARNING_RATE,
     TRAIN_NUM_EPOCHS,
@@ -154,13 +155,14 @@ def collate_batch(
 
 
 def load_training_data(
-    data_dir: Path = Path("data"),
+    data_dir: Path = Path("data/train"),
 ) -> Tuple[List[np.ndarray], List[str]]:
     """
     Load pre-generated training signals and sequences.
 
     Args:
-        data_dir: Path to directory containing signals.pt and sequences.pkl
+        data_dir: Path to directory containing signals.pt and sequences.pkl.
+            By default this points to the train split under data/train.
 
     Returns:
         Tuple containing:
@@ -313,7 +315,8 @@ def train(
     learning_rate: float = TRAIN_LEARNING_RATE,
     checkpoint_dir: Path = Path(CHECKPOINT_DIR),
     model_dir: Path = Path(MODEL_DIR),
-    data_dir: Path = Path("data"),
+    data_dir: Path = Path(TRAIN_PATH),
+    model_file: Path = Path(MODEL_FILE),
     device: Optional[torch.device] = None,
     resume_checkpoint: Optional[Path] = None,
 ) -> None:
@@ -327,6 +330,7 @@ def train(
         checkpoint_dir: Directory to save training checkpoints
         model_dir: Directory to save final model
         data_dir: Directory containing training data
+        model_file: Path to save the final trained model
         device: torch.device (cpu or cuda). Auto-select if None.
         resume_checkpoint: Path to checkpoint file to resume training from
     """
@@ -337,6 +341,8 @@ def train(
     checkpoint_dir = Path(USER_CONFIG.get("checkpoint_dir", str(checkpoint_dir)))
     model_dir = Path(USER_CONFIG.get("model_dir", str(model_dir)))
     data_dir = Path(USER_CONFIG.get("data_dir", str(data_dir)))
+    model_file = Path(USER_CONFIG.get("model_file", str(model_file)))
+    
 
     # Setup device
     if device is None:
@@ -420,9 +426,8 @@ def train(
         )
 
     # Save final model
-    model_path = model_dir / "squig_model.pt"
-    torch.save(model.state_dict(), model_path)
-    print(f"\nFinal model saved: {model_path}")
+    torch.save(model.state_dict(), model_dir / model_file)
+    print(f"\nFinal model saved: {model_dir / model_file}")
 
     # Save loss curve
     loss_plot_path = print_loss_curve(losses, model_dir)
@@ -433,7 +438,7 @@ def train(
     print("=" * 70)
     print(f"Final Loss: {losses[-1]:.4f}")
     print(f"Best Loss: {min(losses):.4f} (Epoch {np.argmin(losses) + 1})")
-    print(f"Model saved to: {model_path}")
+    print(f"Model saved to: {model_dir / model_file}")
     print(f"Loss curve saved to: {loss_plot_path}")
     print("=" * 70)
 
@@ -485,6 +490,7 @@ if __name__ == "__main__":
         learning_rate=TRAIN_LEARNING_RATE,
         checkpoint_dir=Path(CHECKPOINT_DIR),
         model_dir=Path(MODEL_DIR),
-        data_dir=Path("data"),
+        data_dir=Path(TRAIN_PATH),
+        model_file=Path(MODEL_FILE),
         resume_checkpoint=Path(CHECKPOINT_DIR) / CHECKPOINT_FILE,
     )

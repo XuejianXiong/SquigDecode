@@ -6,8 +6,9 @@ SquigNet model on test signals.
 """
 
 from difflib import SequenceMatcher
+import pickle
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -15,7 +16,7 @@ import torch
 import torch.nn as nn
 
 from architecture import SquigNet
-from config import INT_TO_BASE, USER_CONFIG
+from config import INT_TO_BASE, MODEL_DIR, MODEL_FILE, NOISE_STD, TEST_PATH, USER_CONFIG
 from data_simulator import (
     generate_random_dna_sequence,
     generate_squiggle,
@@ -108,6 +109,46 @@ def calculate_accuracy(predicted: str, target: str) -> float:
     return max(0.0, accuracy)  # Ensure non-negative
 
 
+def load_dataset(
+    data_dir: Path,
+) -> Tuple[List[np.ndarray], List[str]]:
+    """
+    Load signals and sequences from a dataset directory.
+
+    Args:
+        data_dir: Path to directory containing ``signals.pt`` and
+            ``sequences.pkl``.
+
+    Returns:
+        Tuple of lists containing signals and DNA sequences.
+
+    Raises:
+        FileNotFoundError: If required files are missing.
+    """
+    signals_path = data_dir / "signals.pt"
+    sequences_path = data_dir / "sequences.pkl"
+
+    missing: List[str] = []
+    if not signals_path.exists():
+        missing.append("signals.pt")
+    if not sequences_path.exists():
+        missing.append("sequences.pkl")
+
+    if missing:
+        raise FileNotFoundError(
+            f"Test dataset incomplete: missing {', '.join(missing)} in {data_dir}. "
+            "Both signals.pt and sequences.pkl are required. "
+            "Run `python src/data_simulator.py` to generate the dataset."
+        )
+
+    signals: List[np.ndarray] = torch.load(signals_path, weights_only=False)
+
+    with open(sequences_path, "rb") as f:
+        sequences: List[str] = pickle.load(f)
+
+    return signals, sequences
+
+
 def load_model(
     model_path: Path = Path(USER_CONFIG.get("model_path", "models/squig_model.pt")),
     device: torch.device = None,
@@ -140,7 +181,7 @@ def load_model(
 
 
 def generate_test_sample(
-    adv_noise: float = 3.0,
+    adv_noise: float = NOISE_STD*0.1,
     scale: float = 1.0,
     shift: float = 0.0,
 ) -> Tuple[np.ndarray, str]:
@@ -163,6 +204,7 @@ def generate_test_sample(
     """
     # Generate random DNA sequence (50-100 bases)
     sequence_length = np.random.randint(50, 101)
+    print(f"Generating test sample with sequence length: {sequence_length} bases")
     sequence = generate_random_dna_sequence(sequence_length)
 
     # Generate squiggle signal
@@ -174,7 +216,7 @@ def generate_test_sample(
     # Add additional Gaussian noise for adversarial testing
     additional_noise = np.random.normal(
         0,
-        adv_noise / 10.0,
+        adv_noise,
         len(standardized_signal),
     )
     adversarial_signal = standardized_signal + additional_noise
@@ -183,6 +225,71 @@ def generate_test_sample(
     adversarial_signal = adversarial_signal * scale + shift
 
     return adversarial_signal, sequence
+
+
+def validate_model_on_dataset(
+    model: SquigNet,
+    data_dir: Path,
+    device: Optional[torch.device] = None,
+    max_samples: Optional[int] = None,
+) -> float:
+    """
+    Validate a trained model on a saved test dataset.
+
+    Args:
+        model: Trained SquigNet model in evaluation mode.
+        data_dir: Directory containing test ``signals.pt`` and
+            ``sequences.pkl``.
+        device: torch.device for computation. Auto-select if None.
+        max_samples: Optional cap on the number of test samples to evaluate.
+
+    Returns:
+        float: Mean accuracy over the evaluated samples.
+    """
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Ensure deterministic inference behavior (disable dropout, use running
+    # batch-norm statistics) while preserving the caller's original mode.
+    was_training = model.training
+    model.eval()
+
+    signals, sequences = load_dataset(data_dir)
+
+    if max_samples is not None:
+        signals = signals[:max_samples]
+        sequences = sequences[:max_samples]
+
+    accuracies: List[float] = []
+
+    try:
+        for idx, (signal, target_sequence) in enumerate(
+            zip(signals, sequences),
+            start=1,
+        ):
+            logits = run_inference(model, signal, device=device)
+            predicted_sequence = greedy_decode(logits)
+            accuracy = calculate_accuracy(predicted_sequence, target_sequence)
+            accuracies.append(accuracy)
+
+            print(
+                f"Sample {idx}: length={len(target_sequence)} bases, "
+                f"accuracy={accuracy:.2%}",
+            )
+    finally:
+        # Restore original training/eval mode.
+        if was_training:
+            model.train()
+
+    if not accuracies:
+        return 0.0
+
+    mean_accuracy = float(np.mean(accuracies))
+    print(
+        f"\nValidation complete on {len(accuracies)} samples. "
+        f"Mean accuracy: {mean_accuracy:.2%}",
+    )
+    return mean_accuracy
 
 
 def run_inference(
@@ -296,7 +403,7 @@ def plot_inference_results(
 
 
 def main(
-    model_path: Path = Path("models/squig_model.pt"),
+    model_path: Path = Path(MODEL_DIR) / Path(MODEL_FILE),
     device: Optional[torch.device] = None,
 ) -> None:
     """
@@ -323,60 +430,62 @@ def main(
         print("Please train the model first using: python3 src/train.py")
         return
 
-    # Generate test sample with adversarial conditions
-    print("Generating test sample with adversarial conditions...")
-    train_noise = USER_CONFIG.get("noise_std", 3.5)
-    adv_noise = USER_CONFIG.get("adversarial_noise", 3.0)
-    print(f"  Noise level (\u03c3): {adv_noise+train_noise} (vs. training: {train_noise})")
+    # Prefer dataset-based validation on the held-out test split.
+    test_data_dir_str = USER_CONFIG.get("test_data_dir", TEST_PATH)
+    test_data_dir = Path(test_data_dir_str)
+
+    if (test_data_dir / "signals.pt").exists() and (
+        test_data_dir / "sequences.pkl"
+    ).exists():
+        print(f"\nValidating on test dataset at: {test_data_dir}")
+        validate_model_on_dataset(model, test_data_dir, device=device)
+        print("\n✓ Dataset-based validation complete!")
+        #return
+
+    # Fallback: single adversarial sample if test dataset is unavailable.
+    signals_pt = test_data_dir / "signals.pt"
+    sequences_pkl = test_data_dir / "sequences.pkl"
+    has_partial = signals_pt.exists() != sequences_pkl.exists()
+    if test_data_dir.exists() and has_partial:
+        print(
+            f"\nTest dataset at {test_data_dir} is incomplete "
+            "(both signals.pt and sequences.pkl required). "
+            "Run `python src/data_simulator.py` to generate."
+        )
+    print(
+        "\nFalling back to adversarial single-sample test...",
+    )
+    train_noise = USER_CONFIG.get("noise_std", NOISE_STD)
+    adv_noise = USER_CONFIG.get("adversarial_noise", NOISE_STD*0.01)
+    print(
+        f"  Noise level (\u03c3): {adv_noise + train_noise} "
+        f"(vs. training: {train_noise})",
+    )
     signal, target_sequence = generate_test_sample(
-        adv_noise=adv_noise,  # Higher noise for adversarial testing
+        adv_noise=adv_noise,
         scale=1.0,
         shift=0.0,
     )
-    print(f"✓ Generated adversarial test sample")
+    print("✓ Generated adversarial test sample")
     print(f"  Target sequence length: {len(target_sequence)} bases")
     print(f"  Signal length: {len(signal)} samples")
 
-    # Run inference
-    print("\nRunning inference...")
     logits = run_inference(model, signal, device)
-    print(f"✓ Inference complete")
-    print(f"  Output shape: {logits.shape}")
-
-    # Decode predictions
-    print("Decoding predictions...")
     predicted_sequence = greedy_decode(logits)
-    print(f"✓ Decoding complete")
-
-    # Calculate accuracy
     accuracy = calculate_accuracy(predicted_sequence, target_sequence)
 
-    # Print results
     print("\n" + "=" * 70)
-    print("Results")
+    print("Adversarial Single-Sample Result")
     print("=" * 70)
     print(f"\nTarget DNA:    {target_sequence}")
     print(f"Predicted DNA: {predicted_sequence}")
     print(f"\nAccuracy: {accuracy:.2%}")
 
-    # Status message
-    if accuracy >= 0.8:
-        print("Status: ✓ PASS (Accuracy ≥ 80%)")
-    elif accuracy >= 0.6:
-        print("Status: ⚠ MARGINAL (Accuracy 60-80%)")
-    else:
-        print("Status: ✗ FAIL (Accuracy < 60%)")
-
-    # Calculate edit distance for reference
     dist = edit_distance(predicted_sequence, target_sequence)
     print(f"\nEdit Distance: {dist} operations")
     print(f"Sequence Length: {len(target_sequence)} bases")
 
-    print("\n" + "=" * 70)
-
-    # Plot results
-    print("\nGenerating visualization...")
-    output_dir = Path("models")
+    output_dir = Path(MODEL_DIR)
     output_dir.mkdir(exist_ok=True)
     plot_inference_results(
         signal,
@@ -390,6 +499,10 @@ def main(
 
 
 if __name__ == "__main__":
+
+    model_dir=Path(USER_CONFIG.get("model_dir", MODEL_DIR))
+    model_file=Path(USER_CONFIG.get("model_file", MODEL_FILE))
+
     main(
-        model_path=Path("models/squig_model.pt"),
+        model_path=model_dir / model_file,
     )
