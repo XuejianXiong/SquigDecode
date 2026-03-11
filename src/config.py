@@ -20,11 +20,13 @@ BASE_PICOAMPERE_MAP = {
 }
 
 # Simulation Parameters
-NUM_SEQUENCES = 1000 # Number of DNA sequences to simulate
-MIN_LENGTH = 50 # Minimum length of DNA sequences
-MAX_LENGTH = 100 # Maximum length of DNA sequences
+NUM_SEQUENCES = 1000  # Number of DNA sequences to simulate
+MIN_LENGTH = 50  # Minimum length of DNA sequences
+MAX_LENGTH = 100  # Maximum length of DNA sequences
 
-DWELL_TIME_MEAN = 15 # Average number of samples a base is detected (depends on sequencing speed)
+DWELL_TIME_MEAN = (
+    15  # Average number of samples a base is detected (depends on sequencing speed)
+)
 DWELL_TIME_STD = 4  # The "spread" of how fast the DNA moves
 MIN_DWELL_TIME = 5  # The minimum samples to detect a base
 
@@ -72,7 +74,9 @@ BASE_TO_INT = {
 # ---------------------------------------------------------------------------
 
 
-def load_user_config(path: Path = Path(__file__).parent / "input.json") -> dict[str, Any]:
+def load_user_config(
+    path: Path = Path(__file__).parent / "input.json",
+) -> dict[str, Any]:
     """Read a JSON file containing user-specified parameters.
 
     If the file does not exist or is invalid, an empty dict is returned.

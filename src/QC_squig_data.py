@@ -53,7 +53,7 @@ def load_data(
         FileNotFoundError: If required data files are not found
     """
     if data_dir is None:
-        base_output_dir = Path(__file__).parent.parent 
+        base_output_dir = Path(__file__).parent.parent
         data_dir = base_output_dir / Path(USER_CONFIG.get("data_dir", TRAIN_PATH))
     else:
         data_dir = Path(data_dir)

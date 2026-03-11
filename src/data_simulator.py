@@ -362,7 +362,7 @@ def main() -> None:
     )
 
     # Base output directory and train/test subdirectories.
-    base_output_dir = Path(__file__).parent.parent 
+    base_output_dir = Path(__file__).parent.parent
     train_dir = base_output_dir / Path(USER_CONFIG.get("data_dir", TRAIN_PATH))
     test_dir = base_output_dir / Path(USER_CONFIG.get("test_data_dir", TEST_PATH))
     train_dir.mkdir(parents=True, exist_ok=True)

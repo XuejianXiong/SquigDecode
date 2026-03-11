@@ -181,7 +181,7 @@ def load_model(
 
 
 def generate_test_sample(
-    adv_noise: float = NOISE_STD*0.1,
+    adv_noise: float = NOISE_STD * 0.1,
     scale: float = 1.0,
     shift: float = 0.0,
 ) -> Tuple[np.ndarray, str]:
@@ -440,7 +440,7 @@ def main(
         print(f"\nValidating on test dataset at: {test_data_dir}")
         validate_model_on_dataset(model, test_data_dir, device=device)
         print("\n✓ Dataset-based validation complete!")
-        #return
+        # return
 
     # Fallback: single adversarial sample if test dataset is unavailable.
     signals_pt = test_data_dir / "signals.pt"
@@ -456,7 +456,7 @@ def main(
         "\nFalling back to adversarial single-sample test...",
     )
     train_noise = USER_CONFIG.get("noise_std", NOISE_STD)
-    adv_noise = USER_CONFIG.get("adversarial_noise", NOISE_STD*0.01)
+    adv_noise = USER_CONFIG.get("adversarial_noise", NOISE_STD * 0.01)
     print(
         f"  Noise level (\u03c3): {adv_noise + train_noise} "
         f"(vs. training: {train_noise})",
@@ -500,8 +500,8 @@ def main(
 
 if __name__ == "__main__":
 
-    model_dir=Path(USER_CONFIG.get("model_dir", MODEL_DIR))
-    model_file=Path(USER_CONFIG.get("model_file", MODEL_FILE))
+    model_dir = Path(USER_CONFIG.get("model_dir", MODEL_DIR))
+    model_file = Path(USER_CONFIG.get("model_file", MODEL_FILE))
 
     main(
         model_path=model_dir / model_file,
