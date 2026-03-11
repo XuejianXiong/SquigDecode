@@ -33,14 +33,14 @@ The model handles 1D signal data through a multi-stage feature extraction and de
 
 ------------------------------------------------
 ## 🚀 Performance & Results
- - Final Training Loss: 0.1293 (at Epoch 50).
+ - Best Training Loss: 0.1328 (at Epoch 47).
 
- - Basecalling Accuracy (Clean Data): ~99%.
+ - Mean Basecalling Accuracy (Test Data): 95.93%.
 
- - Robustness Test (High Noise): ~88% (Demonstrates the impact of distribution shift).
+ - Robustness Test (Add extra noise $\sigma$=0.3): ~85% (Demonstrates the impact of distribution shift).
 
 ### Loss Curve
-The model achieves rapid convergence, breaking the 0.2 loss threshold by Epoch 8, indicating high efficiency in learning the base-level step functions.
+The model achieves rapid convergence, breaking the 0.2 loss threshold by Epoch 6, indicating high efficiency in learning the base-level step functions.
 
 
 ------------------------------------------------
@@ -54,6 +54,7 @@ SquigDecode/
 ├── models/           # Trained model
 ├── results/          # Figures and results
 ├── notebooks/        # Jupyter notebooks for signal analysis
+├── input.json        # User-configurable parameters
 ├── pyproject.toml    # Python dependencies
 ├── requirements.txt  # Python dependencies
 └── README.md         
@@ -63,7 +64,7 @@ SquigDecode/
 
  - `src/data_simulator.py`: Physics-based signal generator (Shift, Scale, and Gaussian noise).
 
- - `src/config.py`: Hardcoded internal physics constants (Sliding window weights, Model dims).
+ - `src/config.py`: Default constants.
 
  - `input.json`: User-configurable parameters for inference and simulation.
 
@@ -74,7 +75,7 @@ SquigDecode/
 
 ------------------------------------------------
 ## 🧪 Technical Insights
- - **Distribution Shift**: During the "Principal Engineer" stress test, increasing noise ($\sigma$) from 3.0 to 5.0 revealed model sensitivity. This highlights the need for Data Augmentation in production environments.
+ - **Distribution Shift**: During the "Principal Engineer" stress test, add extra noise ($\sigma$) from 0.0 to 0.5 revealed model sensitivity. This highlights the need for Data Augmentation in production environments.
 
  - **Temporal Resolution**: The CNN downsamples the signal by 4x (800 → 200 samples), significantly reducing the computational load on the LSTM while maintaining enough data points to distinguish between similar current levels.
 
