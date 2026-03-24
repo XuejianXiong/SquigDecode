@@ -33,7 +33,10 @@ MIN_DWELL_TIME = 5  # The minimum samples to detect a base
 # Weights for the 3-sample sliding window filter (current, prev, next).
 WEIGHTS = (0.7, 0.2, 0.1)
 
-NOISE_STD = 3.5  # Gaussian noise in pA
+# Default Gaussian noise in pA
+NOISE_STD_MIN = 1.5 
+NOISE_STD_MAX = 3.5 
+
 DRIFT_FACTOR = 0.01  # Simulates slight electrical fluctuations over time
 
 WINDOW_SIZE = 3  # Size of the sliding window for smoothing
@@ -45,10 +48,6 @@ DATASET_RANDOM_SEED = 42
 TRAIN_PATH = Path("data/train")
 TEST_PATH = Path("data/test")
 
-# When generating the training split, noise standard deviation is sampled
-# uniformly per sequence from [min, max]. Defaults keep legacy behavior.
-DATASET_TRAIN_NOISE_STD_MIN = NOISE_STD
-DATASET_TRAIN_NOISE_STD_MAX = NOISE_STD
 
 # Training configuration constants
 TRAIN_NUM_EPOCHS = 50  # Default number of epochs for training
@@ -60,6 +59,11 @@ MODEL_FILE = "squig_model.pt"  # Default model filename
 CHECKPOINT_FILE = "checkpoint.pt"  # Default checkpoint filename
 LOSS_PLOT_DPI = 150  # DPI when saving loss curve
 
+# --- Training Augmentation Settings ---
+# Default maximum standard deviation of Gaussian noise to add during training
+TRAINING_NOISE_MAX = 0.0
+# If True, noise increases linearly from 0 to TRAINING_NOISE_MAX over epochs
+USE_NOISE_CURRICULUM = False
 
 # DNA-to-integer mapping for CTC loss
 BASE_TO_INT = {
@@ -69,11 +73,18 @@ BASE_TO_INT = {
     "T": 4,
 }
 
+# Base index to character mapping
+INT_TO_BASE = {
+    0: "Blank",
+    1: "A",
+    2: "C",
+    3: "G",
+    4: "T",
+}
+
 # ---------------------------------------------------------------------------
 # User configuration: load optional overrides from src/input.json
 # ---------------------------------------------------------------------------
-
-
 def load_user_config(
     path: Path = Path(__file__).parent / "input.json",
 ) -> dict[str, Any]:
@@ -93,11 +104,3 @@ def load_user_config(
 # global dictionary that modules can import and query for overrides
 USER_CONFIG: dict = load_user_config()
 
-# Base index to character mapping
-INT_TO_BASE = {
-    0: "Blank",
-    1: "A",
-    2: "C",
-    3: "G",
-    4: "T",
-}

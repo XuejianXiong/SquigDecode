@@ -22,22 +22,22 @@ from config import (
     DWELL_TIME_MEAN,
     DWELL_TIME_STD,
     MIN_DWELL_TIME,
-    TRAIN_PATH,
-    TEST_PATH,
     WEIGHTS,
-    NOISE_STD,
+    NOISE_STD_MIN,
+    NOISE_STD_MAX,
     DRIFT_FACTOR,
     WINDOW_SIZE,
     DATASET_TRAIN_RATIO,
-    DATASET_RANDOM_SEED,
-    DATASET_TRAIN_NOISE_STD_MIN,
-    DATASET_TRAIN_NOISE_STD_MAX,
+    DATASET_RANDOM_SEED,    
+    TRAIN_PATH,
+    TEST_PATH,
     USER_CONFIG,
 )
 
 
 # Apply optional overrides from user config.
-NOISE_STD = USER_CONFIG.get("noise_std", NOISE_STD)
+NOISE_STD_MIN = USER_CONFIG.get("noise_std_min", NOISE_STD_MIN)
+NOISE_STD_MAX = USER_CONFIG.get("noise_std_max", NOISE_STD_MAX)
 DRIFT_FACTOR = USER_CONFIG.get("drift_factor", DRIFT_FACTOR)
 
 
@@ -98,7 +98,7 @@ def _step_sliding_window_filter(
 def _step_add_noise(
     signal: np.ndarray,
     drift_factor: float = DRIFT_FACTOR,
-    noise_std: float = NOISE_STD,
+    noise_std: float = NOISE_STD_MAX,
 ) -> np.ndarray:
     """Step 4a: Add linear drift proportional to the mean signal."""
     mean_signal = np.mean(signal)
@@ -124,13 +124,19 @@ def _step_smooth(signal: np.ndarray, window_size: int = WINDOW_SIZE) -> np.ndarr
 def generate_squiggle(
     dna_sequence: str,
     drift_factor: float = DRIFT_FACTOR,
-    noise_std: float = NOISE_STD,
+    noise_std: float = NOISE_STD_MAX,
     window_size: int = WINDOW_SIZE,
 ) -> Tuple[np.ndarray, List[int]]:
     """Generate a realistic nanopore squiggle signal from a DNA sequence.
 
-    The function composes modular steps implemented as helper functions to make
-    the pipeline more readable and testable. Behavior and defaults are unchanged.
+    Args:
+        dna_sequence: Input DNA sequence (string of A, C, G, T).
+        drift_factor: Proportionality constant for linear drift (default 0.01).
+        noise_std: Standard deviation of Gaussian noise to add (default 3.5 pA).
+        window_size: Window size for smoothing (default 3). 
+    
+    Returns:
+        Tuple[np.ndarray, List[int]]: Final squiggle signal and list of dwell times per base.
     """
     # Steps 1 & 2: map bases to levels and expand by dwell
     signal, dwell_times = _step_map_and_expand(dna_sequence)
@@ -305,14 +311,14 @@ def main() -> None:
     )
     noise_std_min = float(
         USER_CONFIG.get(
-            "train_noise_std_min",
-            DATASET_TRAIN_NOISE_STD_MIN,
+            "noise_std_min",
+            NOISE_STD_MIN,
         ),
     )
     noise_std_max = float(
         USER_CONFIG.get(
-            "train_noise_std_max",
-            DATASET_TRAIN_NOISE_STD_MAX,
+            "noise_std_max",
+            NOISE_STD_MAX,
         ),
     )
 
