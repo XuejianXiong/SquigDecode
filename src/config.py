@@ -59,10 +59,10 @@ MODEL_FILE = "squig_model.pt"  # Default model filename
 CHECKPOINT_FILE = "checkpoint.pt"  # Default checkpoint filename
 LOSS_PLOT_DPI = 150  # DPI when saving loss curve
 
-# --- Training Augmentation Settings ---
-# Default maximum standard deviation of Gaussian noise to add during training
-TRAINING_NOISE_MAX = 0.0
-# If True, noise increases linearly from 0 to TRAINING_NOISE_MAX over epochs
+# --- Inference Augmentation Settings ---
+# Default standard deviation of Gaussian noise to add during inference
+INFERENCE_NOISE = 0.0
+# If True, noise increases linearly from 0 to INFERENCE_NOISE over epochs
 USE_NOISE_CURRICULUM = False
 
 # DNA-to-integer mapping for CTC loss

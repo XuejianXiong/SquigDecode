@@ -32,7 +32,7 @@ The model processes 1D electrical current signals (picoampere measurements) and 
 Architecture Pipeline:
 
 <p align="center">
-  <img src="images/squigdecode.png" width="300">
+  <img src="images/squignet.png" width="300">
 </p>
 
 
@@ -136,7 +136,7 @@ Training and evaluation were performed on simulated nanopore signals.
 
 Best Training Loss: 0.1328 at Epoch 47
 
-Mean Basecalling Accuracy: 95.93% on the test dataset
+Mean Basecalling Accuracy: 95.89% on the test dataset
 
 ### Robustness Testing
 
@@ -144,7 +144,7 @@ To evaluate model stability, additional Gaussian noise was introduced.
 
 Noise level: σ = 0.3
 
-Accuracy: ~85%
+Accuracy: 87.36%
 
 This experiment demonstrates the impact of distribution shift, highlighting the importance of data augmentation and robust training strategies for production sequencing systems.
 

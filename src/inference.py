@@ -16,7 +16,15 @@ import torch
 import torch.nn as nn
 
 from architecture import SquigNet
-from config import INT_TO_BASE, MODEL_DIR, MODEL_FILE, NOISE_STD, TEST_PATH, USER_CONFIG
+from config import (
+    INT_TO_BASE, 
+    MODEL_DIR, 
+    MODEL_FILE,
+    NOISE_STD_MAX,
+    INFERENCE_NOISE, 
+    USE_NOISE_CURRICULUM,
+    TEST_PATH, 
+    USER_CONFIG)
 from data_simulator import (
     generate_random_dna_sequence,
     generate_squiggle,
@@ -181,7 +189,7 @@ def load_model(
 
 
 def generate_test_sample(
-    adv_noise: float = NOISE_STD * 0.1,
+    adv_noise: float = INFERENCE_NOISE,
     scale: float = 1.0,
     shift: float = 0.0,
 ) -> Tuple[np.ndarray, str]:
@@ -455,8 +463,8 @@ def main(
     print(
         "\nFalling back to adversarial single-sample test...",
     )
-    train_noise = USER_CONFIG.get("noise_std", NOISE_STD)
-    adv_noise = USER_CONFIG.get("adversarial_noise", NOISE_STD * 0.01)
+    train_noise = USER_CONFIG.get("noise_std_max", NOISE_STD_MAX)
+    adv_noise = USER_CONFIG.get("inference_noise", INFERENCE_NOISE)
     print(
         f"  Noise level (\u03c3): {adv_noise + train_noise} "
         f"(vs. training: {train_noise})",
