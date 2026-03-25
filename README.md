@@ -29,7 +29,11 @@ SquigDecode uses a CNN–BiLSTM hybrid architecture optimized for sequential sig
 
 The model processes 1D electrical current signals (picoampere measurements) and converts them into nucleotide predictions.
 
-Architecture Pipeline
+Architecture Pipeline:
+
+<p align="center">
+  <img src="images/squigdecode.png" width="650">
+</p>
 
 
 ------------------------------------------------
@@ -182,17 +186,10 @@ In real sequencing workflows, basecalling is the first computational stage.
 
 Typical pipeline:
 
-```
-Raw Current Signal
-        ↓
-Basecalling (SquigDecode)
-        ↓
-FASTQ Generation
-        ↓
-Read Alignment
-        ↓
-Variant Calling
-```
+<p align="center">
+  <img src="images/pipeline.png" width="650">
+</p>
+
 
 Common downstream tools include:
 
