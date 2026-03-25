@@ -32,7 +32,7 @@ The model processes 1D electrical current signals (picoampere measurements) and 
 Architecture Pipeline:
 
 <p align="center">
-  <img src="images/squigdecode.png" width="650">
+  <img src="images/squigdecode.png" width="500">
 </p>
 
 
@@ -187,7 +187,7 @@ In real sequencing workflows, basecalling is the first computational stage.
 Typical pipeline:
 
 <p align="center">
-  <img src="images/pipeline.png" width="650">
+  <img src="images/pipeline.png" width="500">
 </p>
 
 
