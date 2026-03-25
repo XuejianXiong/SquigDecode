@@ -187,7 +187,7 @@ In real sequencing workflows, basecalling is the first computational stage.
 Typical pipeline:
 
 <p align="center">
-  <img src="images/pipeline.png" width="300">
+  <img src="images/pipeline.png" width="200">
 </p>
 
 
