@@ -20,18 +20,23 @@ BASE_PICOAMPERE_MAP = {
 }
 
 # Simulation Parameters
-NUM_SEQUENCES = 1000 # Number of DNA sequences to simulate
-MIN_LENGTH = 50 # Minimum length of DNA sequences
-MAX_LENGTH = 100 # Maximum length of DNA sequences
+NUM_SEQUENCES = 1000  # Number of DNA sequences to simulate
+MIN_LENGTH = 50  # Minimum length of DNA sequences
+MAX_LENGTH = 100  # Maximum length of DNA sequences
 
-DWELL_TIME_MEAN = 15 # Average number of samples a base is detected (depends on sequencing speed)
+DWELL_TIME_MEAN = (
+    15  # Average number of samples a base is detected (depends on sequencing speed)
+)
 DWELL_TIME_STD = 4  # The "spread" of how fast the DNA moves
 MIN_DWELL_TIME = 5  # The minimum samples to detect a base
 
 # Weights for the 3-sample sliding window filter (current, prev, next).
 WEIGHTS = (0.7, 0.2, 0.1)
 
-NOISE_STD = 3.5  # Gaussian noise in pA
+# Default Gaussian noise in pA
+NOISE_STD_MIN = 1.5 
+NOISE_STD_MAX = 3.5 
+
 DRIFT_FACTOR = 0.01  # Simulates slight electrical fluctuations over time
 
 WINDOW_SIZE = 3  # Size of the sliding window for smoothing
@@ -43,10 +48,6 @@ DATASET_RANDOM_SEED = 42
 TRAIN_PATH = Path("data/train")
 TEST_PATH = Path("data/test")
 
-# When generating the training split, noise standard deviation is sampled
-# uniformly per sequence from [min, max]. Defaults keep legacy behavior.
-DATASET_TRAIN_NOISE_STD_MIN = NOISE_STD
-DATASET_TRAIN_NOISE_STD_MAX = NOISE_STD
 
 # Training configuration constants
 TRAIN_NUM_EPOCHS = 50  # Default number of epochs for training
@@ -58,6 +59,11 @@ MODEL_FILE = "squig_model.pt"  # Default model filename
 CHECKPOINT_FILE = "checkpoint.pt"  # Default checkpoint filename
 LOSS_PLOT_DPI = 150  # DPI when saving loss curve
 
+# --- Inference Augmentation Settings ---
+# Default standard deviation of Gaussian noise to add during inference
+INFERENCE_NOISE = 0.0
+# If True, noise increases linearly from 0 to INFERENCE_NOISE over epochs
+USE_NOISE_CURRICULUM = False
 
 # DNA-to-integer mapping for CTC loss
 BASE_TO_INT = {
@@ -67,12 +73,21 @@ BASE_TO_INT = {
     "T": 4,
 }
 
+# Base index to character mapping
+INT_TO_BASE = {
+    0: "Blank",
+    1: "A",
+    2: "C",
+    3: "G",
+    4: "T",
+}
+
 # ---------------------------------------------------------------------------
 # User configuration: load optional overrides from src/input.json
 # ---------------------------------------------------------------------------
-
-
-def load_user_config(path: Path = Path(__file__).parent / "input.json") -> dict[str, Any]:
+def load_user_config(
+    path: Path = Path(__file__).parent / "input.json",
+) -> dict[str, Any]:
     """Read a JSON file containing user-specified parameters.
 
     If the file does not exist or is invalid, an empty dict is returned.
@@ -89,11 +104,3 @@ def load_user_config(path: Path = Path(__file__).parent / "input.json") -> dict[
 # global dictionary that modules can import and query for overrides
 USER_CONFIG: dict = load_user_config()
 
-# Base index to character mapping
-INT_TO_BASE = {
-    0: "Blank",
-    1: "A",
-    2: "C",
-    3: "G",
-    4: "T",
-}

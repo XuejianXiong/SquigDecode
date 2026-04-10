@@ -342,7 +342,6 @@ def train(
     model_dir = Path(USER_CONFIG.get("model_dir", str(model_dir)))
     data_dir = Path(USER_CONFIG.get("data_dir", str(data_dir)))
     model_file = Path(USER_CONFIG.get("model_file", str(model_file)))
-    
 
     # Setup device
     if device is None:
@@ -450,7 +449,7 @@ def print_loss_curve(losses: List[float], model_dir: Path) -> Path:
     Args:
         losses: List of loss values for each epoch
         model_dir: Path to the model directory where the plot will be saved
-    
+
     Returns:
         loss_plot_path: Path to the saved loss curve image
     """
