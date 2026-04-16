@@ -89,7 +89,7 @@ SquigDecode/
 ------------------------------------------------
 ## ◈ Getting Started
 
-1. **IEnvironment Setup** 
+1. **Environment Setup** 
    
    This project uses [uv](https://github.com/astral-sh/uv) for fast, reproducible dependency management.
    ```
