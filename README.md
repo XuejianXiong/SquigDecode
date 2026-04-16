@@ -1,4 +1,4 @@
-# 🧬 SquigDecode: Deep Learning Basecaller
+# ≣ SquigDecode: Deep Learning Basecaller
 ## A CNN-BiLSTM Hybrid for Nanopore Signal Transduction
 
 SquigDecode is a deep learning–based basecaller designed to translate raw electrical current signals ("squiggles") generated during nanopore sequencing into nucleotide sequences (A, C, G, T).
@@ -9,7 +9,7 @@ This repository demonstrates how signal processing, deep learning, and probabili
 
 
 ------------------------------------------------
-## Project Overview
+## ◈ Project Overview
 
 Nanopore sequencing measures electrical current changes as DNA molecules pass through a biological pore. These signals must be decoded into nucleotide sequences through computational basecalling algorithms.
 
@@ -24,7 +24,7 @@ SquigDecode implements a simplified research basecaller that performs:
 4. Model validation and signal analysis
 
 ------------------------------------------------
-## 🏗️ Architecture: SquigNet
+## ◈ Architecture: SquigNet
 SquigDecode uses a CNN–BiLSTM hybrid architecture optimized for sequential signal decoding.
 
 The model processes 1D electrical current signals (picoampere measurements) and converts them into nucleotide predictions.
@@ -37,7 +37,7 @@ Architecture Pipeline:
 
 
 ------------------------------------------------
-## Model Components
+## ◈ Model Components
 ### 1. Signal Processing
 
 Raw nanopore signals are preprocessed to stabilize model training.
@@ -89,7 +89,7 @@ Components:
 - CTC allows the model to learn sequence alignment implicitly and handle variable-length signals.
 
 ------------------------------------------------
-## Design Decisions
+## ◈ Design Decisions
 ### Why CNN + BiLSTM?
 
 Nanopore signals contain both:
@@ -130,7 +130,7 @@ This technique is widely used in sequence transcription tasks.
 
 
 ------------------------------------------------
-## Performance
+## ◈ Performance
 
 Training and evaluation were performed on simulated nanopore signals.
 
@@ -155,7 +155,7 @@ The model converges rapidly.
 Key observation: The loss drops below 0.2 by Epoch 6, indicating efficient learning of signal-to-base mappings.
 
 ------------------------------------------------
-## Key Technical Insights
+## ◈ Key Technical Insights
 ### Distribution Shift Sensitivity
 
 Adding noise to the signal reveals significant performance degradation.
@@ -180,7 +180,7 @@ This significantly reduces the computational burden of the recurrent layers whil
 
 
 ------------------------------------------------
-## Position in a Nanopore Sequencing Pipeline
+## ◈ Position in a Nanopore Sequencing Pipeline
 
 In real sequencing workflows, basecalling is the first computational stage.
 
@@ -203,7 +203,7 @@ Basecalling accuracy directly impacts downstream alignment and variant detection
 
 
 ------------------------------------------------
-## Benchmark Context
+## ◈ Benchmark Context
 
 Modern nanopore basecallers rely on deep learning architectures to decode electrical signals.
 
@@ -224,7 +224,7 @@ SquigDecode is designed as a research prototype that demonstrates the core compo
 Production systems typically include additional optimizations such as GPU acceleration and transformer architectures.
 
 ------------------------------------------------
-## Project Structure
+## ◈ Project Structure
 
 ```
 SquigDecode/
@@ -233,22 +233,24 @@ SquigDecode/
 │   ├── data_simulator.py    # Physics-based signal generator
 │   ├── train.py             # Training pipeline using CTC loss
 │   ├── inference.py         # Greedy decoding and evaluation
+│   ├── QC_squig_data.py     # QC
+│   ├── input.json           # User-configurable parameters
 │   └── config.py            # Default configuration parameters
-│
 ├── tests/                   # Unit tests for signal simulation and preprocessing
 ├── data/                    # Reference signals and datasets
+├── images/                  # Images
 ├── models/                  # Trained model checkpoints
-├── results/                 # Evaluation figures and results
 ├── notebooks/               # Signal analysis notebooks
-│
-├── input.json               # User-configurable parameters
-├── requirements.txt         # Python dependencies
+├── results/                 # Evaluation figures and results
 ├── pyproject.toml           # Project metadata
+├── .gitignore               # 
+├── uv.lock                  # 
+├── LICENSE                  # 
 └── README.md    
 ```
 
 ------------------------------------------------
-## Running the Project
+## ◈ Running the Project
 
 1. Install Dependencies: 
    ```
@@ -264,7 +266,7 @@ SquigDecode/
 
 
 ------------------------------------------------
-## Research Motivation
+## ◈ Research Motivation
 
 Basecalling converts raw electrical signals from nanopore sequencing into nucleotide sequences. This step is essential for downstream genomic analysis.
 
@@ -272,7 +274,7 @@ SquigDecode provides a simplified framework for exploring the algorithmic challe
 
 
 ------------------------------------------------
-## Future Directions
+## ◈ Future Directions
 
 Potential extensions include:
 
@@ -287,6 +289,6 @@ improved noise augmentation strategies
 GPU acceleration for large-scale training
 
 ------------------------------------------------
-## License
+## ◈ License
 
 MIT License – feel free to use, adapt, and share.

@@ -73,6 +73,7 @@ Thumbs.db
 data/
 logs/
 *.log
+bk/
 checkpoints/
 #results/
-#models/*.pt
+models/*.pt
