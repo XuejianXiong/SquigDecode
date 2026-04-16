@@ -1,230 +1,146 @@
 """
 SquigDecode: Neural Architecture for Nanopore Basecalling
 
-This module defines SquigNet, a hybrid CNN-RNN model designed to convert
-raw nanopore signals (squiggles) into accurate base calls.
+This module defines SquigNet, a hybrid CNN-RNN model optimized for 
+robust nanopore signal decoding using MAD-standardized inputs.
 """
 
-from typing import Dict, Tuple
-
+from typing import Dict, Any, Tuple
 import torch
 import torch.nn as nn
-
 
 class SquigNet(nn.Module):
     """
     SquigNet: CNN-RNN hybrid model for nanopore signal basecalling.
 
-    Architecture:
-    - Two 1D-CNN blocks (64 and 128 filters) with MaxPooling for
-      hierarchical feature extraction and downsampling
-    - Bidirectional LSTM (hidden_size=256, num_layers=2) for temporal
-      sequence modeling
-    - Output layer mapping to 5 classes: 0 (Blank/CTC), 1 (A), 2 (C),
-      3 (G), 4 (T)
-
-    Input shape: (batch, 1, signal_length)
-    Output shape: (batch, signal_length // 4, 5)
-
-    The layer structure aligns signal length with CTC Loss requirements:
-    downsampling by MaxPool1d(2) in each block reduces signal length
-    by a factor of 4 total, which balances temporal resolution with
-    computational efficiency.
+    Architecture Upgrades:
+    - Larger Conv1d kernels (7) to capture broader k-mer context.
+    - Dilated Convolution in Block 2 to handle homopolymer plateaus.
+    - LeakyReLU activation to prevent neuron death during noisy signal training.
+    - LogSoftmax output for numerical stability with CTCLoss.
     """
 
     def __init__(self) -> None:
-        """Initialize SquigNet model with CNN and LSTM layers."""
+        """Initialize SquigNet with optimized CNN and BiLSTM layers."""
         super(SquigNet, self).__init__()
 
         # CNN Feature Extraction Block 1
-        # Input: (batch, 1, signal_length)
-        # Output: (batch, 64, signal_length // 2)
+        # Captures local electrical patterns with a receptive field of 7 samples.
         self.conv1 = nn.Conv1d(
             in_channels=1,
             out_channels=64,
-            kernel_size=3,
+            kernel_size=7,
             stride=1,
-            padding=1,
+            padding=3,
         )
         self.bn1 = nn.BatchNorm1d(64)
-        self.relu1 = nn.ReLU(inplace=True)
+        self.relu1 = nn.LeakyReLU(0.1, inplace=True)
         self.pool1 = nn.MaxPool1d(kernel_size=2)
 
         # CNN Feature Extraction Block 2
-        # Input: (batch, 64, signal_length // 2)
-        # Output: (batch, 128, signal_length // 4)
+        # Uses Dilation (2) to expand the receptive field without adding parameters,
+        # helping the model "see" across longer signal plateaus (homopolymers).
         self.conv2 = nn.Conv1d(
             in_channels=64,
             out_channels=128,
             kernel_size=3,
             stride=1,
-            padding=1,
+            padding=2,
+            dilation=2,
         )
         self.bn2 = nn.BatchNorm1d(128)
-        self.relu2 = nn.ReLU(inplace=True)
+        self.relu2 = nn.LeakyReLU(0.1, inplace=True)
         self.pool2 = nn.MaxPool1d(kernel_size=2)
 
-        # Bidirectional LSTM for sequence modeling
-        # Input: (batch, signal_length // 4, 128)
-        # Output: (batch, signal_length // 4, 512)  [256 * 2 for bidirectional]
+        # Bidirectional LSTM for temporal sequence modeling
+        # Input features: 128 (CNN filters)
+        # Hidden size: 256 per direction -> 512 total
         self.lstm = nn.LSTM(
             input_size=128,
             hidden_size=256,
             num_layers=2,
             batch_first=True,
             bidirectional=True,
-            dropout=0.5,
+            dropout=0.3, 
         )
 
         # Output Classification Layer
-        # Maps LSTM output (256 * 2) to 5 base classes
+        # Maps 512 features to 5 classes: 0(Blank), 1(A), 2(C), 3(G), 4(T)
         self.output_layer = nn.Linear(
             in_features=256 * 2,
             out_features=5,
         )
+        
+        # LogSoftmax is preferred for CTCLoss stability
+        self.log_softmax = nn.LogSoftmax(dim=2)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass through SquigNet.
-
-        Process:
-        1. Two 1D-CNN blocks with batch norm, ReLU, and pooling
-        2. Transpose for LSTM input (batch, length, channels)
-        3. Bidirectional LSTM processing
-        4. Linear output layer for classification
-
-        Args:
-            x: Input signal tensor of shape (batch, 1, signal_length)
-
-        Returns:
-            torch.Tensor: Output logits of shape
-                (batch, signal_length // 4, num_classes=5)
+        Input: (batch, 1, signal_length)
+        Output: (batch, signal_length // 4, 5) -> Log-probabilities
         """
-        # CNN Block 1: Convolution -> BatchNorm -> ReLU -> MaxPool
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu1(x)
-        x = self.pool1(x)
+        # CNN Block 1
+        x = self.pool1(self.relu1(self.bn1(self.conv1(x))))
 
-        # CNN Block 2: Convolution -> BatchNorm -> ReLU -> MaxPool
-        x = self.conv2(x)
-        x = self.bn2(x)
-        x = self.relu2(x)
-        x = self.pool2(x)
+        # CNN Block 2
+        x = self.pool2(self.relu2(self.bn2(self.conv2(x))))
 
-        # Transpose for LSTM: (batch, channels, length) ->
-        # (batch, length, channels)
+        # Transpose for LSTM: (batch, channels, length) -> (batch, length, channels)
         x = x.transpose(1, 2)
 
-        # Bidirectional LSTM
-        lstm_out, (hidden, cell) = self.lstm(x)
+        # BiLSTM processing
+        lstm_out, _ = self.lstm(x)
 
-        # Output classification layer
-        output = self.output_layer(lstm_out)
-
-        return output
+        # Output mapping to logits then log-probabilities
+        logits = self.output_layer(lstm_out)
+        return self.log_softmax(logits)
 
     @classmethod
     def count_parameters(cls) -> int:
-        """
-        Count the total number of trainable parameters in SquigNet.
-
-        This is a class method that instantiates a model and counts
-        all learnable parameters.
-
-        Returns:
-            int: Total number of trainable parameters
-        """
+        """Count total trainable parameters."""
         model = cls()
-        total_params = sum(p.numel() for p in model.parameters())
-        return total_params
+        return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-    def get_model_info(self) -> Dict[str, any]:
-        """
-        Get detailed model information and statistics.
-
-        Returns:
-            Dict[str, any]: Dictionary containing:
-                - total_parameters: Total number of parameters
-                - trainable_parameters: Number of trainable parameters
-                - num_classes: Number of output classes
-                - architecture: Model description
-                - input_shape: Expected input tensor shape
-                - output_shape: Expected output tensor shape (depends on
-                  input signal_length)
-        """
-        total_params = sum(p.numel() for p in self.parameters())
+    def get_model_info(self) -> Dict[str, Any]:
+        """Get detailed model metadata for reporting and publication."""
         trainable_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
 
         return {
-            "total_parameters": total_params,
-            "trainable_parameters": trainable_params,
+            "total_parameters": trainable_params,
+            "architecture": "CNN-BiLSTM-Hybrid (Optimized)",
+            "input_normalization": "MAD + Center-Clipping",
+            "downsampling_factor": 4,
+            "receptive_field_enhancements": ["Kernel 7", "Dilation 2"],
             "num_classes": 5,
-            "architecture": "CNN-BiLSTM Hybrid",
-            "input_shape": "(batch, 1, signal_length)",
-            "output_shape": "(batch, signal_length // 4, 5)",
-            "base_classes": {
-                "0": "Blank (CTC)",
-                "1": "A",
-                "2": "C",
-                "3": "G",
-                "4": "T",
-            },
+            "classes": {0: "Blank", 1: "A", 2: "C", 3: "G", 4: "T"}
         }
 
-
 def create_model() -> SquigNet:
-    """
-    Factory function to create a SquigNet model instance.
-
-    Returns:
-        SquigNet: Initialized model ready for training or inference
-    """
+    """Factory function to instantiate the model."""
     return SquigNet()
 
-
 if __name__ == "__main__":
-    # Example usage and model testing
-    print("=" * 70)
-    print("SquigNet Architecture Summary")
-    print("=" * 70)
+    # Test model initialization and forward pass
+    print("=" * 60)
+    print("SquigNet Architecture: Principal-Level Review")
+    print("=" * 60)
 
-    # Create model and display parameter count
-    model = SquigNet()
-    total_params = SquigNet.count_parameters()
-    print(f"\nTotal trainable parameters: {total_params:,}")
+    model = create_model()
+    info = model.get_model_info()
+    
+    print(f"\nModel: {info['architecture']}")
+    print(f"Trainable Parameters: {info['total_parameters']:,}")
+    print(f"Features: {', '.join(info['receptive_field_enhancements'])}")
 
-    # Display detailed model information
-    model_info = model.get_model_info()
-    print(f"\nModel Information:")
-    for key, value in model_info.items():
-        if key != "base_classes":
-            print(f"  {key}: {value}")
-
-    print(f"\nBase Classes:")
-    for idx, base_name in model_info["base_classes"].items():
-        print(f"  {idx}: {base_name}")
-
-    # Test forward pass with synthetic data
-    print("\n" + "=" * 70)
-    print("Forward Pass Test")
-    print("=" * 70)
-
-    batch_size = 4
-    signal_length = 1000
-
-    test_input = torch.randn(batch_size, 1, signal_length)
+    # Dummy data test: Batch=8, Signal=1024
+    test_signal = torch.randn(8, 1, 1024)
     with torch.no_grad():
-        output = model(test_input)
+        output = model(test_signal)
 
-    print(f"\nInput shape:  {test_input.shape}")
-    print(f"Output shape: {output.shape}")
-    downsampled_length = signal_length // 4
-    print(f"Expected:     torch.Size([{batch_size}, {downsampled_length}, 5])")
-
-    # Verify output shape matches expectations
-    expected_shape = (batch_size, downsampled_length, 5)
-    assert output.shape == expected_shape, (
-        f"Output shape {output.shape} does not match " f"expected {expected_shape}"
-    )
-    print("\n✓ Forward pass test successful!")
+    print(f"\nForward Pass Test:")
+    print(f"  Input:  {test_signal.shape}")
+    print(f"  Output: {output.shape} (Log-probabilities)")
+    
+    assert output.shape == (8, 1024 // 4, 5)
+    print("\n✓ Architecture check complete. Ready for training.")

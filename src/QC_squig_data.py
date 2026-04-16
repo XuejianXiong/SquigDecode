@@ -1,363 +1,208 @@
 """
-SquigDecode: Quality Control Visualization for Squiggle Signals
+SquigDecode: Quality Control and Statistical Profiling for Squiggle Signals.
 
-This module provides functionality to load and visualize simulated squiggle signals
-with base position annotations, allowing inspection of signal quality and transitions.
+This module provides a comprehensive suite of visualization tools for inspecting 
+simulated nanopore signals. It facilitates:
+1.  Individual signal inspection with base-calling ground-truth overlays.
+2.  Dataset-wide statistical profiling (Dwell times, Composition, Correlations).
+3.  Validation of signal standardization and electronic lag modeling.
+
+The plots generated here are critical for verifying that the 'data_simulator' 
+is producing biophysically plausible inputs for the neural network.
 """
 
-try:
-    import numpy as np
-except ImportError as e:
-    raise ImportError(
-        "numpy is required for QC scripts; install it with 'pip install numpy'."
-    ) from e
+from __future__ import annotations
 
+import logging
 import pickle
-
-try:
-    import torch
-except ImportError as e:
-    raise ImportError(
-        "torch is required to load signal tensors; install with 'pip install torch'."
-    ) from e
-
-try:
-    import matplotlib.pyplot as plt
-except ImportError as e:
-    raise ImportError(
-        "matplotlib is required for plotting; install with 'pip install matplotlib'."
-    ) from e
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 
-from config import BASE_PICOAMPERE_MAP, TRAIN_PATH, USER_CONFIG
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
 
+from config import TRAIN_PATH, USER_CONFIG
 
-def load_data(
-    data_dir: Optional[str] = None,
-) -> Tuple[List[np.ndarray], List[str], List[List[int]]]:
+# Configure Professional Logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+class SignalVisualizer:
     """
-    Load signals, sequences, and dwell times from saved data files.
+    Orchestrates the generation of QC plots for Nanopore signals.
+    
+    Attributes:
+        base_colors (Dict[str, str]): Standardized color palette for DNA bases.
+    """
+
+    def __init__(self):
+        self.base_colors = {
+            "A": "#FF6B6B",  # Vibrant Red
+            "C": "#4ECDC4",  # Teal
+            "G": "#45B7D1",  # Sky Blue
+            "T": "#FFA07A",  # Light Salmon
+            "Unknown": "#7F8C8D" # Gray
+        }
+
+    def plot_single_read(
+        self,
+        signal: np.ndarray,
+        sequence: str,
+        dwell_times: List[int],
+        title: str = "Squiggle Signal Inspection",
+        figsize: Tuple[int, int] = (16, 6),
+    ) -> plt.Figure:
+        """
+        Generates a high-fidelity plot of a signal with base annotations.
+
+        Args:
+            signal: The standardized 1D signal array.
+            sequence: The corresponding DNA sequence string.
+            dwell_times: Number of samples per base.
+            title: Title for the figure.
+            figsize: Dimensions of the resulting plot.
+
+        Returns:
+            plt.Figure: The Matplotlib figure containing the annotated squiggle.
+        """
+        fig, ax = plt.subplots(figsize=figsize)
+        
+        # Plot raw waveform
+        ax.plot(signal, linewidth=1.2, color="#2C3E50", alpha=0.9, label="Standardized Signal")
+
+        # Calculate boundaries
+        base_end_positions = np.cumsum(dwell_times)
+        base_start_positions = np.insert(base_end_positions[:-1], 0, 0)
+
+        for base, start, end in zip(sequence, base_start_positions, base_end_positions):
+            color = self.base_colors.get(base, self.base_colors["Unknown"])
+            
+            # Add vertical boundary and shaded region
+            ax.axvline(x=end, color="#BDC3C7", linestyle="--", alpha=0.5, linewidth=0.8)
+            ax.axvspan(start, end, alpha=0.1, color=color)
+
+            # Label placement: find local signal peak for visibility
+            local_segment = signal[int(start):int(end)]
+            y_pos = np.max(local_segment) + 0.5 if len(local_segment) > 0 else 1.0
+            
+            ax.text(
+                (start + end) / 2, y_pos, base,
+                ha="center", va="bottom", fontsize=9, fontweight="bold",
+                color=color, bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1)
+            )
+
+        ax.set_title(title, loc='left', fontsize=14, fontweight='bold')
+        ax.set_xlabel("Sample Index (Time)", fontsize=10)
+        ax.set_ylabel("Standardized Current (z-score)", fontsize=10)
+        ax.grid(True, axis='y', alpha=0.2)
+        ax.legend(frameon=False)
+        
+        plt.tight_layout()
+        return fig
+
+    def plot_dataset_stats(
+        self,
+        sequences: List[str],
+        dwell_times_list: List[List[int]]
+    ) -> plt.Figure:
+        """
+        Aggregates dataset metrics into a 2x2 diagnostic dashboard.
+
+        Args:
+            sequences: List of all simulated DNA sequences.
+            dwell_times_list: Nested list of dwell times for all sequences.
+
+        Returns:
+            plt.Figure: A dashboard showing Dwell distribution, Composition, 
+                Length Correlation, and Signal Density.
+        """
+        fig, axes = plt.subplots(2, 2, figsize=(18, 10))
+        axes = axes.flatten()
+
+        # 1. Dwell Time Distribution
+        all_dwells = [d for sublist in dwell_times_list for d in sublist]
+        axes[0].hist(all_dwells, bins=40, color="#34495E", alpha=0.7, rwidth=0.85)
+        axes[0].set_title("Distribution of Dwell Times", fontweight='bold')
+        axes[0].axvline(np.mean(all_dwells), color='red', linestyle='--', label='Mean')
+
+        # 2. Base Composition
+        counts = {b: "".join(sequences).count(b) for b in "ACGT"}
+        axes[1].bar(counts.keys(), counts.values(), color=[self.base_colors[b] for b in "ACGT"])
+        axes[1].set_title("Base Composition", fontweight='bold')
+
+        # 3. Correlation: Base Count vs Signal Length
+        seq_lens = [len(s) for s in sequences]
+        sig_lens = [sum(d) for d in dwell_times_list]
+        axes[2].scatter(seq_lens, sig_lens, alpha=0.5, s=20, color="#8E44AD")
+        axes[2].set_title("Base Count vs. Signal Duration", fontweight='bold')
+
+        # 4. Total Signal Length Histogram
+        axes[3].hist(sig_lens, bins=40, color="#27AE60", alpha=0.7)
+        axes[3].set_title("Total Squiggle Lengths", fontweight='bold')
+
+        for ax in axes:
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.grid(axis='y', linestyle=':', alpha=0.6)
+
+        plt.tight_layout()
+        return fig
+
+
+def load_dataset(data_dir: Optional[Path] = None) -> Tuple[List[np.ndarray], List[str], List[List[int]]]:
+    """
+    Utility to load generated tensors and metadata.
 
     Args:
-        data_dir: Path to data directory. If None, uses ../data
-            relative to script location.
+        data_dir: Directory containing .pt and .pkl files.
 
     Returns:
-        Tuple containing:
-        - List of signal arrays
-        - List of DNA sequences
-        - List of dwell time lists
+        Standardized tuple of (signals, sequences, dwell_times).
 
     Raises:
-        FileNotFoundError: If required data files are not found
+        FileNotFoundError: If the data pipeline hasn't been run.
     """
     if data_dir is None:
-        base_output_dir = Path(__file__).parent.parent
-        data_dir = base_output_dir / Path(USER_CONFIG.get("data_dir", TRAIN_PATH))
-    else:
-        data_dir = Path(data_dir)
+        root = Path(__file__).parent.parent
+        data_dir = root / Path(USER_CONFIG.get("data_dir", TRAIN_PATH))
 
-    # Load signals
-    signals_path = data_dir / "signals.pt"
-    if not signals_path.exists():
-        raise FileNotFoundError(f"Signals file not found: {signals_path}")
-    signals = torch.load(signals_path, weights_only=False)
-
-    # Load sequences
-    sequences_path = data_dir / "sequences.pkl"
-    if not sequences_path.exists():
-        raise FileNotFoundError(f"Sequences file not found: {sequences_path}")
-    with open(sequences_path, "rb") as f:
-        sequences = pickle.load(f)
-
-    # Load dwell times
-    dwell_times_path = data_dir / "dwell_times.pkl"
-    if not dwell_times_path.exists():
-        raise FileNotFoundError(f"Dwell times file not found: {dwell_times_path}")
-    with open(dwell_times_path, "rb") as f:
-        dwell_times = pickle.load(f)
-
-    return signals, sequences, dwell_times
-
-
-def get_base_positions(
-    dwell_times: List[int],
-) -> Tuple[List[int], List[str], List[float]]:
-    """
-    Calculate sample index positions where each base ends in the signal.
-
-    Args:
-        dwell_times: List of dwell times for each base
-
-    Returns:
-        Tuple containing:
-        - List of sample indices where each base ends
-        - List of base letters (from sequence reconstruction)
-        - List of expected pA levels for each base
-    """
-    # Calculate cumulative positions (where each base ends)
-    base_end_positions = np.cumsum(dwell_times).tolist()
-
-    return base_end_positions
-
-
-def plot_signal_with_bases(
-    signal: np.ndarray,
-    sequence: str,
-    dwell_times: List[int],
-    title: str = "Squiggle Signal with Base Positions",
-    figsize: Tuple[int, int] = (16, 6),
-) -> plt.Figure:
-    """
-    Plot a standardized squiggle signal with base position annotations.
-
-    Creates a visualization showing:
-    - The standardized signal waveform
-    - Vertical lines at base boundaries
-    - Text labels for each DNA base
-    - Shaded regions for expected pA levels
-
-    Args:
-        signal: Standardized signal array
-        sequence: DNA sequence string
-        dwell_times: Dwell times for each base
-        title: Plot title
-        figsize: Figure size (width, height)
-
-    Returns:
-        plt.Figure: Matplotlib figure object
-    """
-    fig, ax = plt.subplots(figsize=figsize)
-
-    # Plot the signal
-    sample_indices = np.arange(len(signal))
-    ax.plot(
-        sample_indices,
-        signal,
-        linewidth=1.5,
-        color="darkblue",
-        alpha=0.8,
-        label="Signal",
-    )
-
-    # Calculate base boundary positions
-    base_end_positions = np.cumsum(dwell_times).tolist()
-    base_start_positions = [0] + base_end_positions[:-1]
-
-    # Color map for bases
-    base_colors = {
-        "A": "#FF6B6B",  # Red
-        "C": "#4ECDC4",  # Teal
-        "G": "#45B7D1",  # Blue
-        "T": "#FFA07A",  # Light Salmon
-    }
-
-    # Add vertical lines and labels for each base
-    for idx, (base, start_pos, end_pos) in enumerate(
-        zip(sequence, base_start_positions, base_end_positions)
-    ):
-        # Vertical line at base boundary
-        ax.axvline(x=end_pos, color="gray", linestyle="--", alpha=0.4, linewidth=0.8)
-
-        # Base label at mid-position
-        mid_pos = (start_pos + end_pos) / 2
-        # Get y position slightly above the signal for label placement
-        y_max = np.max(signal[max(0, int(start_pos)) : min(len(signal), int(end_pos))])
-        ax.text(
-            mid_pos,
-            y_max + 0.3,
-            base,
-            ha="center",
-            va="bottom",
-            fontsize=10,
-            fontweight="bold",
-            color=base_colors.get(base, "black"),
-            bbox=dict(
-                boxstyle="round,pad=0.3",
-                facecolor="white",
-                alpha=0.7,
-                edgecolor="none",
-            ),
-        )
-
-        # Shade background by base
-        ax.axvspan(
-            start_pos,
-            end_pos,
-            alpha=0.08,
-            color=base_colors.get(base, "gray"),
-        )
-
-    # Labels and formatting
-    ax.set_xlabel("Sample Index", fontsize=12, fontweight="bold")
-    ax.set_ylabel("Standardized Signal (pA)", fontsize=12, fontweight="bold")
-    ax.set_title(title, fontsize=14, fontweight="bold")
-    ax.grid(True, alpha=0.3, linestyle=":", linewidth=0.5)
-    ax.legend(loc="upper right", fontsize=10)
-
-    # Add sequence info at top
-    sequence_str = "".join(sequence)
-    ax.text(
-        0.5,
-        1.08,
-        f"Sequence ({len(sequence)} bases): {sequence_str}",
-        transform=ax.transAxes,
-        ha="center",
-        fontsize=11,
-        fontweight="bold",
-        bbox=dict(boxstyle="round,pad=0.5", facecolor="lightyellow", alpha=0.8),
-    )
-
-    plt.tight_layout()
-    return fig
-
-
-def plot_dwell_time_distribution(ax: plt.Axes, dwell_times: List[List[int]]) -> None:
-    """Populate an axes with dwell time histogram."""
-    all_dwell_times = []
-    for dwell_list in dwell_times:
-        all_dwell_times.extend(dwell_list)
-
-    ax.hist(all_dwell_times, bins=30, color="steelblue", alpha=0.7, edgecolor="black")
-    ax.axvline(
-        np.mean(all_dwell_times),
-        color="red",
-        linestyle="--",
-        linewidth=2,
-        label=f"Mean: {np.mean(all_dwell_times):.1f}",
-    )
-    ax.set_xlabel("Dwell Time (samples)", fontsize=11, fontweight="bold")
-    ax.set_ylabel("Frequency", fontsize=11, fontweight="bold")
-    ax.set_title("Distribution of Dwell Times", fontsize=12, fontweight="bold")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-
-
-def plot_base_composition(ax: plt.Axes, sequences: List[str]) -> None:
-    """Populate an axes with base composition bar chart."""
-    base_counts = {"A": 0, "C": 0, "G": 0, "T": 0}
-    for sequence in sequences:
-        for base in sequence:
-            if base in base_counts:
-                base_counts[base] += 1
-
-    bases = list(base_counts.keys())
-    counts = list(base_counts.values())
-    colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A"]
-
-    ax.bar(bases, counts, color=colors, alpha=0.7, edgecolor="black", linewidth=1.5)
-    ax.set_xlabel("Base", fontsize=11, fontweight="bold")
-    ax.set_ylabel("Count", fontsize=11, fontweight="bold")
-    ax.set_title("Base Composition in Dataset", fontsize=12, fontweight="bold")
-    ax.grid(True, alpha=0.3, axis="y")
-
-
-def plot_length_correlation(
-    ax: plt.Axes,
-    sequences: List[str],
-    dwell_times: List[List[int]],
-) -> None:
-    """Populate an axes with signal length vs base count scatter."""
-    signal_lengths = [sum(dw) for dw in dwell_times]
-    base_lengths = [len(seq) for seq in sequences]
-    ax.scatter(base_lengths, signal_lengths, alpha=0.6, color="purple", edgecolors="w")
-    ax.set_xlabel("Number of Bases", fontsize=11, fontweight="bold")
-    ax.set_ylabel("Signal Length (samples)", fontsize=11, fontweight="bold")
-    ax.set_title("Signal Length vs. Base Count", fontsize=12, fontweight="bold")
-    ax.grid(True, alpha=0.3)
-
-
-def plot_squiggle_length_hist(ax: plt.Axes, dwell_times: List[List[int]]) -> None:
-    """Populate an axes with histogram of total squiggle lengths."""
-    signal_lengths = [sum(dw) for dw in dwell_times]
-    ax.hist(signal_lengths, bins=60, color="olive", alpha=0.7, edgecolor="black")
-    ax.axvline(
-        np.mean(signal_lengths),
-        color="red",
-        linestyle="--",
-        linewidth=2,
-        label=f"Mean: {np.mean(signal_lengths):.1f}",
-    )
-    ax.set_xlabel("Signal Length (samples)", fontsize=11, fontweight="bold")
-    ax.set_ylabel("Frequency", fontsize=11, fontweight="bold")
-    ax.set_title("Distribution of Squiggle Lengths", fontsize=12, fontweight="bold")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-
-
-def plot_signal_statistics(
-    sequences: List[str],
-    dwell_times: List[List[int]],
-) -> plt.Figure:
-    """
-    Aggregate statistics figure composed of individual plot functions.
-    """
-    fig, axes = plt.subplots(2, 2, figsize=(18, 10))
-    axes = axes.flatten()
-
-    plot_dwell_time_distribution(axes[0], dwell_times)
-    plot_base_composition(axes[1], sequences)
-    plot_length_correlation(axes[2], sequences, dwell_times)
-    plot_squiggle_length_hist(axes[3], dwell_times)
-
-    plt.tight_layout()
-    return fig
-
-
-def main() -> None:
-    """
-    Main execution: Load and visualize the first sequence's squiggle signal.
-
-    Creates two plots:
-    1. The first sequence's signal with base annotations and boundaries
-    2. Statistical summaries of dwell times, base composition, and signal lengths across the dataset
-    """
-    print("Loading squiggle data...")
     try:
-        signals, sequences, dwell_times_list = load_data()
+        signals = torch.load(data_dir / "signals.pt", weights_only=False)
+        with open(data_dir / "sequences.pkl", "rb") as f:
+            sequences = pickle.load(f)
+        with open(data_dir / "dwell_times.pkl", "rb") as f:
+            dwell_times = pickle.load(f)
+        return signals, sequences, dwell_times
     except FileNotFoundError as e:
-        print(f"Error: {e}")
-        print("Please run data_simulator.py first to generate the dataset.")
+        logger.error("Dataset not found at %s. Ensure data_simulator.py was run.", data_dir)
+        raise e
+
+
+def main():
+    """Execution entry point for QC generation."""
+    logger.info("Initializing SquigDecode QC Pipeline...")
+    
+    try:
+        signals, sequences, dwells = load_dataset()
+    except FileNotFoundError:
         return
 
-    if len(signals) == 0:
-        print("No signals found in dataset.")
-        return
+    viz = SignalVisualizer()
+    results_dir = Path(__file__).parent.parent / "results"
+    results_dir.mkdir(exist_ok=True)
 
-    print(f"Dataset loaded: {len(signals)} sequences")
+    # Inspect first read
+    logger.info("Visualizing read 0: %s...", sequences[0][:20])
+    fig1 = viz.plot_single_read(signals[0], sequences[0], dwells[0])
+    fig1.savefig(results_dir / "signal_inspection.png", dpi=200)
 
-    # Get first sequence and signal
-    first_signal = signals[0]
-    first_sequence = sequences[0]
-    first_dwell_times = dwell_times_list[0]
+    # Inspect dataset
+    logger.info("Generating dataset-wide diagnostics...")
+    fig2 = viz.plot_dataset_stats(sequences, dwells)
+    fig2.savefig(results_dir / "dataset_stats.png", dpi=200)
 
-    print(f"\nFirst sequence: {first_sequence}")
-    print(f"Sequence length: {len(first_sequence)} bases")
-    print(f"Signal length: {len(first_signal)} samples")
-    print(f"Total dwell time: {sum(first_dwell_times)} samples")
-
-    # Plot the first signal with base annotations
-    fig1 = plot_signal_with_bases(
-        first_signal,
-        first_sequence,
-        first_dwell_times,
-        title="Squiggle Signal QC - First Sequence",
-    )
-
-    # Plot dataset statistics
-    fig2 = plot_signal_statistics(sequences, dwell_times_list)
-
-    # Save figures
-    output_dir = Path(__file__).parent.parent / "results"
-    output_dir.mkdir(exist_ok=True)
-
-    fig1.savefig(output_dir / "signal_qc_plot.png", dpi=150, bbox_inches="tight")
-    print(f"\nSignal QC plot saved to {output_dir / 'signal_qc_plot.png'}")
-
-    fig2.savefig(output_dir / "dataset_statistics.png", dpi=150, bbox_inches="tight")
-    print(f"Dataset statistics plot saved to {output_dir / 'dataset_statistics.png'}")
-
+    logger.info("QC Artifacts saved to %s", results_dir)
     plt.show()
 
 
