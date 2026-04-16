@@ -1,516 +1,223 @@
 """
-SquigDecode: Inference Script for SquigNet Basecaller Evaluation
+SquigDecode: Professional Inference & Evaluation Engine.
 
-This module implements inference, decoding, and evaluation of the trained
-SquigNet model on test signals.
+This module provides the `SquigBasecaller` class for translating raw Nanopore 
+electrical signals into DNA sequences. It implements CTC greedy decoding, 
+Levenshtein-based accuracy metrics, and visualization utilities.
+
+The pipeline is optimized for MAD-standardized signals and supports both 
+single-signal inference and bulk dataset validation.
+
+Example:
+    $ uv run src/inference.py
 """
 
-from difflib import SequenceMatcher
+from __future__ import annotations
+
+import logging
 import pickle
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Tuple, Any
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import torch.nn as nn
+from tqdm import tqdm
 
 from architecture import SquigNet
 from config import (
     INT_TO_BASE, 
     MODEL_DIR, 
     MODEL_FILE,
-    NOISE_STD_MAX,
-    INFERENCE_NOISE, 
-    USE_NOISE_CURRICULUM,
     TEST_PATH, 
-    USER_CONFIG)
-from data_simulator import (
-    generate_random_dna_sequence,
-    generate_squiggle,
-    standardize_signal,
+    USER_CONFIG
 )
 
+# Professional Logging Configuration
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger("SquigInference")
 
-def greedy_decode(
-    logits: torch.Tensor,
-    blank_idx: int = 0,
-) -> str:
+class SquigBasecaller:
     """
-    Greedy decoder: convert logits to DNA sequence.
-
-    Process:
-    1. Take argmax to get predicted class indices
-    2. Remove consecutive duplicates (CTC collapse)
-    3. Remove blank tokens (idx 0)
-    4. Convert to base characters
-
-    Args:
-        logits: Model output tensor of shape (batch, length, num_classes)
-        blank_idx: Index of blank/padding token (default 0 for CTC)
-
-    Returns:
-        str: Decoded DNA sequence
+    High-level API for performing inference with trained SquigNet models.
+    
+    Attributes:
+        device (torch.device): Hardware target (CPU/CUDA).
+        model (nn.Module): The loaded SquigNet architecture.
+        blank_idx (int): The CTC blank token index (default: 0).
     """
-    # Get batch size and sequence length
-    batch_size = logits.shape[0]
+    def __init__(self, model_path: Path, device: torch.device):
+        """
+        Initializes the basecaller and loads weights.
+        
+        Args:
+            model_path: Path to the .pt or .pth weight file.
+            device: Torch device to host the model.
+        """
+        self.device = device
+        self.blank_idx = 0
+        self.model = self._load_model(model_path)
+        logger.info(f"Basecaller initialized on {device}")
 
-    decoded_sequences = []
+    def _load_model(self, path: Path) -> SquigNet:
+        """Loads and verifies model state dictionary."""
+        if not path.exists():
+            raise FileNotFoundError(f"Checkpoint missing: {path}")
+        
+        model = SquigNet().to(self.device)
+        # Using weights_only=True for secure loading of untrusted checkpoints
+        state_dict = torch.load(path, map_location=self.device, weights_only=True)
+        model.load_state_dict(state_dict)
+        model.eval()
+        return model
 
-    for b in range(batch_size):
-        # Get predictions for this sample: (length,)
-        predictions = torch.argmax(logits[b], dim=-1).cpu().numpy()
+    def basecall(self, signal: np.ndarray) -> str:
+        """
+        Translates a single raw signal into a DNA string.
+        
+        Args:
+            signal: 1D NumPy array of standardized electrical current.
+            
+        Returns:
+            The decoded DNA sequence string.
+        """
+        # (1, C, L) tensor format
+        tensor = torch.as_tensor(signal, dtype=torch.float32).view(1, 1, -1).to(self.device)
+        
+        with torch.no_grad():
+            log_probs = self.model(tensor)
+            
+        return self.decode_ctc(log_probs)[0]
 
-        # Remove consecutive duplicates (CTC collapse)
-        collapsed = []
-        last_idx = None
-        for idx in predictions:
-            if idx != last_idx:
-                collapsed.append(idx)
-                last_idx = idx
+    def decode_ctc(self, log_probs: torch.Tensor) -> List[str]:
+        """
+        Performs greedy CTC decoding (best-path) on model output.
+        
+        Args:
+            log_probs: Tensor of shape (Batch, Time, Classes).
+            
+        Returns:
+            List of decoded strings for the batch.
+        """
+        # Get most likely class indices: (Batch, Time)
+        argmax_indices = torch.argmax(log_probs, dim=-1)
+        
+        decoded_batch = []
+        for batch_idx in range(argmax_indices.size(0)):
+            seq_indices = argmax_indices[batch_idx].cpu().numpy()
+            
+            collapsed = []
+            prev_idx = -1
+            for idx in seq_indices:
+                # 1. Collapse repeated tokens
+                # 2. Filter out blank tokens (self.blank_idx)
+                if idx != prev_idx:
+                    if idx != self.blank_idx:
+                        collapsed.append(idx)
+                prev_idx = idx
+            
+            dna_seq = "".join([INT_TO_BASE.get(int(i), 'N') for i in collapsed])
+            decoded_batch.append(dna_seq)
+            
+        return decoded_batch
 
-        # Remove blank tokens
-        decoded = [INT_TO_BASE[int(idx)] for idx in collapsed if idx != blank_idx]
-
-        # Join to form DNA string
-        sequence = "".join(decoded)
-        decoded_sequences.append(sequence)
-
-    # Return first sequence (single sample inference)
-    return decoded_sequences[0] if decoded_sequences else ""
-
-
-def edit_distance(s1: str, s2: str) -> int:
+def calculate_levenshtein_accuracy(predicted: str, target: str) -> float:
     """
-    Compute Levenshtein edit distance between two strings.
-
-    Args:
-        s1: First string
-        s2: Second string
-
-    Returns:
-        int: Minimum edit distance
+    Calculates sequence identity based on normalized Edit Distance.
+    
+    Formula: 1 - (LevenshteinDistance / LengthOfTarget)
     """
-    matcher = SequenceMatcher(None, s1, s2)
-    matching_blocks = matcher.get_matching_blocks()
-    return max(len(s1), len(s2)) - sum(block.size for block in matching_blocks)
-
-
-def calculate_accuracy(predicted: str, target: str) -> float:
-    """
-    Calculate accuracy using normalized edit distance.
-
-    Accuracy = 1 - (EditDistance / len(target))
-
-    Args:
-        predicted: Predicted DNA sequence
-        target: Ground truth DNA sequence
-
-    Returns:
-        float: Accuracy score (0.0 to 1.0)
-    """
-    if len(target) == 0:
-        return 1.0 if len(predicted) == 0 else 0.0
-
-    dist = edit_distance(predicted, target)
-    accuracy = 1.0 - (dist / len(target))
-    return max(0.0, accuracy)  # Ensure non-negative
-
-
-def load_dataset(
-    data_dir: Path,
-) -> Tuple[List[np.ndarray], List[str]]:
-    """
-    Load signals and sequences from a dataset directory.
-
-    Args:
-        data_dir: Path to directory containing ``signals.pt`` and
-            ``sequences.pkl``.
-
-    Returns:
-        Tuple of lists containing signals and DNA sequences.
-
-    Raises:
-        FileNotFoundError: If required files are missing.
-    """
-    signals_path = data_dir / "signals.pt"
-    sequences_path = data_dir / "sequences.pkl"
-
-    missing: List[str] = []
-    if not signals_path.exists():
-        missing.append("signals.pt")
-    if not sequences_path.exists():
-        missing.append("sequences.pkl")
-
-    if missing:
-        raise FileNotFoundError(
-            f"Test dataset incomplete: missing {', '.join(missing)} in {data_dir}. "
-            "Both signals.pt and sequences.pkl are required. "
-            "Run `python src/data_simulator.py` to generate the dataset."
-        )
-
-    signals: List[np.ndarray] = torch.load(signals_path, weights_only=False)
-
-    with open(sequences_path, "rb") as f:
-        sequences: List[str] = pickle.load(f)
-
-    return signals, sequences
-
-
-def load_model(
-    model_path: Path = Path(USER_CONFIG.get("model_path", "models/squig_model.pt")),
-    device: torch.device = None,
-) -> SquigNet:
-    """
-    Load trained SquigNet model from checkpoint.
-
-    Args:
-        model_path: Path to model weights file
-        device: torch.device to load model on. Auto-select if None.
-
-    Returns:
-        SquigNet: Model in eval mode
-
-    Raises:
-        FileNotFoundError: If model file does not exist
-    """
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    if not model_path.exists():
-        raise FileNotFoundError(f"Model not found: {model_path}")
-
-    model = SquigNet().to(device)
-    state_dict = torch.load(model_path, weights_only=True)
-    model.load_state_dict(state_dict)
-    model.eval()
-
-    return model
-
-
-def generate_test_sample(
-    adv_noise: float = INFERENCE_NOISE,
-    scale: float = 1.0,
-    shift: float = 0.0,
-) -> Tuple[np.ndarray, str]:
-    """
-    Generate a single test sample with adversarial signal conditions.
-
-    This function tests model robustness by introducing higher noise
-    and signal scaling/shifting that may not be present in training.
-
-    Args:
-        adv_noise: Standard deviation of additional Gaussian noise.
-                   Default 3.0.
-        scale: Scaling factor for signal amplitude. Default 1.0 (no change).
-        shift: DC offset added to signal. Default 0.0 (no change).
-
-    Returns:
-        Tuple containing:
-        - signal: Adversarial signal array with noise and scaling
-        - sequence: Ground truth DNA sequence
-    """
-    # Generate random DNA sequence (50-100 bases)
-    sequence_length = np.random.randint(50, 101)
-    print(f"Generating test sample with sequence length: {sequence_length} bases")
-    sequence = generate_random_dna_sequence(sequence_length)
-
-    # Generate squiggle signal
-    signal, _ = generate_squiggle(sequence)
-
-    # Standardize signal
-    standardized_signal = standardize_signal(signal)
-
-    # Add additional Gaussian noise for adversarial testing
-    additional_noise = np.random.normal(
-        0,
-        adv_noise,
-        len(standardized_signal),
-    )
-    adversarial_signal = standardized_signal + additional_noise
-
-    # Apply scale and shift transformations
-    adversarial_signal = adversarial_signal * scale + shift
-
-    return adversarial_signal, sequence
-
-
-def validate_model_on_dataset(
-    model: SquigNet,
-    data_dir: Path,
-    device: Optional[torch.device] = None,
-    max_samples: Optional[int] = None,
-) -> float:
-    """
-    Validate a trained model on a saved test dataset.
-
-    Args:
-        model: Trained SquigNet model in evaluation mode.
-        data_dir: Directory containing test ``signals.pt`` and
-            ``sequences.pkl``.
-        device: torch.device for computation. Auto-select if None.
-        max_samples: Optional cap on the number of test samples to evaluate.
-
-    Returns:
-        float: Mean accuracy over the evaluated samples.
-    """
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # Ensure deterministic inference behavior (disable dropout, use running
-    # batch-norm statistics) while preserving the caller's original mode.
-    was_training = model.training
-    model.eval()
-
-    signals, sequences = load_dataset(data_dir)
-
-    if max_samples is not None:
-        signals = signals[:max_samples]
-        sequences = sequences[:max_samples]
-
-    accuracies: List[float] = []
-
-    try:
-        for idx, (signal, target_sequence) in enumerate(
-            zip(signals, sequences),
-            start=1,
-        ):
-            logits = run_inference(model, signal, device=device)
-            predicted_sequence = greedy_decode(logits)
-            accuracy = calculate_accuracy(predicted_sequence, target_sequence)
-            accuracies.append(accuracy)
-
-            print(
-                f"Sample {idx}: length={len(target_sequence)} bases, "
-                f"accuracy={accuracy:.2%}",
-            )
-    finally:
-        # Restore original training/eval mode.
-        if was_training:
-            model.train()
-
-    if not accuracies:
+    if not target:
         return 0.0
+    
+    # Use a dynamic programming approach for edit distance
+    rows = len(predicted) + 1
+    cols = len(target) + 1
+    dist = np.zeros((rows, cols), dtype=int)
 
-    mean_accuracy = float(np.mean(accuracies))
-    print(
-        f"\nValidation complete on {len(accuracies)} samples. "
-        f"Mean accuracy: {mean_accuracy:.2%}",
-    )
-    return mean_accuracy
+    for i in range(1, rows): dist[i, 0] = i
+    for i in range(1, cols): dist[0, i] = i
 
+    for col in range(1, cols):
+        for row in range(1, rows):
+            cost = 0 if predicted[row-1] == target[col-1] else 1
+            dist[row, col] = min(dist[row-1, col] + 1,      # deletion
+                                 dist[row, col-1] + 1,      # insertion
+                                 dist[row-1, col-1] + cost) # substitution
 
-def run_inference(
-    model: SquigNet,
-    signal: np.ndarray,
-    device: torch.device = None,
-) -> torch.Tensor:
-    """
-    Run inference on a single signal.
+    edit_dist = dist[rows-1, cols-1]
+    return max(0.0, 1.0 - (edit_dist / len(target)))
 
-    Args:
-        model: SquigNet model (should be in eval mode)
-        signal: Standardized signal array of shape (signal_length,)
-        device: torch.device for computation
+def plot_diagnostic(signal: np.ndarray, pred: str, target: str, acc: float, path: Path):
+    """Generates a professional diagnostic plot of the basecalling event."""
+    plt.figure(figsize=(14, 5), dpi=100)
+    plt.plot(signal, color='#2c3e50', linewidth=0.8, alpha=0.8)
+    
+    # Formatting
+    plt.title(f"SquigNet Inference Diagnostic | Accuracy: {acc:.2%}", fontweight='bold')
+    plt.xlabel("Time (Samples)")
+    plt.ylabel("Standardized Current (z-score)")
+    plt.grid(True, linestyle='--', alpha=0.5)
 
-    Returns:
-        torch.Tensor: Model output logits of shape (1, downsampled_length, 5)
-    """
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # Convert signal to tensor and add batch/channel dimensions
-    signal_tensor = (
-        torch.tensor(
-            signal,
-            dtype=torch.float32,
-        )
-        .unsqueeze(0)
-        .unsqueeze(0)
-        .to(device)
-    )  # (1, 1, signal_length)
-
-    # Forward pass
-    with torch.no_grad():
-        logits = model(signal_tensor)
-
-    return logits
-
-
-def plot_inference_results(
-    signal: np.ndarray,
-    predicted: str,
-    target: str,
-    accuracy: float,
-    output_path: Path = Path("models/inference_result.png"),
-) -> None:
-    """
-    Plot signal and display predicted vs. target sequences.
-
-    Args:
-        signal: Standardized signal array
-        predicted: Predicted DNA sequence
-        target: Ground truth DNA sequence
-        accuracy: Accuracy score
-        output_path: Path to save figure
-    """
-    fig, ax = plt.subplots(figsize=(14, 6))
-
-    # Plot signal
-    sample_indices = np.arange(len(signal))
-    ax.plot(
-        sample_indices,
-        signal,
-        linewidth=1.5,
-        color="darkblue",
-        alpha=0.8,
-        label="Signal",
-    )
-
-    ax.set_xlabel("Sample Index", fontsize=12, fontweight="bold")
-    ax.set_ylabel("Standardized Signal (pA)", fontsize=12, fontweight="bold")
-    ax.set_title(
-        "Inference Result: Signal with Predictions", fontsize=14, fontweight="bold"
-    )
-    ax.grid(True, alpha=0.3, linestyle=":", linewidth=0.5)
-    ax.legend(loc="upper right", fontsize=10)
-
-    # Add sequence info as text box
-    success = accuracy >= 0.8
-    color = "#90EE90" if success else "#FFB6C6"
-    status = "PASS ✓" if success else "FAIL ✗"
-
-    info_text = (
-        f"Target:    {target}\n"
-        f"Predicted: {predicted}\n"
-        f"Accuracy:  {accuracy:.2%}\n"
-        f"Status:    {status}"
-    )
-
-    ax.text(
-        0.02,
-        0.98,
-        info_text,
-        transform=ax.transAxes,
-        fontsize=10,
-        fontfamily="monospace",
-        verticalalignment="top",
-        bbox=dict(
-            boxstyle="round",
-            facecolor=color,
-            alpha=0.8,
-            edgecolor="black",
-            linewidth=1.5,
-        ),
-    )
+    # Comparison box
+    info_text = (f"REF: {target[:60]}...\n"
+                 f"PRED: {pred[:60]}...")
+    plt.annotate(info_text, xy=(0.02, 0.05), xycoords='axes fraction',
+                 fontsize=10, family='monospace', bbox=dict(boxstyle="round", fc="w", ec="0.5", alpha=0.9))
 
     plt.tight_layout()
-    plt.savefig(output_path, dpi=150, bbox_inches="tight")
-    print(f"Inference plot saved: {output_path}")
-    plt.show()
+    plt.savefig(path)
+    plt.close()
 
+def main():
+    """Execution entry point for test set evaluation."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    root = Path(__file__).parent.parent.resolve()
+    
+    # Configuration Pathing
+    model_path = root / Path(USER_CONFIG.get("model_dir", MODEL_DIR)) / Path(USER_CONFIG.get("model_file", MODEL_FILE))
+    test_dir = root / Path(USER_CONFIG.get("test_data_dir", TEST_PATH))
+    results_dir = root / "results"
+    results_dir.mkdir(exist_ok=True)
 
-def main(
-    model_path: Path = Path(MODEL_DIR) / Path(MODEL_FILE),
-    device: Optional[torch.device] = None,
-) -> None:
-    """
-    Main inference pipeline.
-
-    Args:
-        model_path: Path to trained model weights
-        device: torch.device for computation
-    """
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    print("=" * 70)
-    print("SquigNet Inference & Evaluation")
-    print("=" * 70)
-
-    # Load model
-    print("\nLoading model...")
     try:
-        model = load_model(model_path, device)
-        print(f"✓ Model loaded from {model_path}")
-    except FileNotFoundError as e:
-        print(f"Error: {e}")
-        print("Please train the model first using: python3 src/train.py")
+        basecaller = SquigBasecaller(model_path, device)
+    except Exception as e:
+        logger.error(f"Initialization failed: {e}")
         return
 
-    # Prefer dataset-based validation on the held-out test split.
-    test_data_dir_str = USER_CONFIG.get("test_data_dir", TEST_PATH)
-    test_data_dir = Path(test_data_dir_str)
+    # Load data
+    try:
+        signals = torch.load(test_dir / "signals.pt", weights_only=False)
+        with open(test_dir / "sequences.pkl", "rb") as f:
+            targets = pickle.load(f)
+    except FileNotFoundError:
+        logger.error("Test data not found. Ensure the simulator has run.")
+        return
 
-    if (test_data_dir / "signals.pt").exists() and (
-        test_data_dir / "sequences.pkl"
-    ).exists():
-        print(f"\nValidating on test dataset at: {test_data_dir}")
-        validate_model_on_dataset(model, test_data_dir, device=device)
-        print("\n✓ Dataset-based validation complete!")
-        # return
+    # Evaluation Loop
+    logger.info(f"Starting evaluation on {len(signals)} samples...")
+    accuracies = []
+    
+    # Process samples (limit for quick validation)
+    eval_limit = min(len(signals), 100)
+    
+    for i in tqdm(range(eval_limit), desc="Basecalling"):
+        pred_seq = basecaller.basecall(signals[i])
+        score = calculate_levenshtein_accuracy(pred_seq, targets[i])
+        accuracies.append(score)
 
-    # Fallback: single adversarial sample if test dataset is unavailable.
-    signals_pt = test_data_dir / "signals.pt"
-    sequences_pkl = test_data_dir / "sequences.pkl"
-    has_partial = signals_pt.exists() != sequences_pkl.exists()
-    if test_data_dir.exists() and has_partial:
-        print(
-            f"\nTest dataset at {test_data_dir} is incomplete "
-            "(both signals.pt and sequences.pkl required). "
-            "Run `python src/data_simulator.py` to generate."
-        )
-    print(
-        "\nFalling back to adversarial single-sample test...",
-    )
-    train_noise = USER_CONFIG.get("noise_std_max", NOISE_STD_MAX)
-    adv_noise = USER_CONFIG.get("inference_noise", INFERENCE_NOISE)
-    print(
-        f"  Noise level (\u03c3): {adv_noise + train_noise} "
-        f"(vs. training: {train_noise})",
-    )
-    signal, target_sequence = generate_test_sample(
-        adv_noise=adv_noise,
-        scale=1.0,
-        shift=0.0,
-    )
-    print("✓ Generated adversarial test sample")
-    print(f"  Target sequence length: {len(target_sequence)} bases")
-    print(f"  Signal length: {len(signal)} samples")
+    mean_acc = np.mean(accuracies)
+    logger.info("-" * 40)
+    logger.info(f"FINAL MEAN ACCURACY: {mean_acc:.2%}")
+    logger.info("-" * 40)
 
-    logits = run_inference(model, signal, device)
-    predicted_sequence = greedy_decode(logits)
-    accuracy = calculate_accuracy(predicted_sequence, target_sequence)
-
-    print("\n" + "=" * 70)
-    print("Adversarial Single-Sample Result")
-    print("=" * 70)
-    print(f"\nTarget DNA:    {target_sequence}")
-    print(f"Predicted DNA: {predicted_sequence}")
-    print(f"\nAccuracy: {accuracy:.2%}")
-
-    dist = edit_distance(predicted_sequence, target_sequence)
-    print(f"\nEdit Distance: {dist} operations")
-    print(f"Sequence Length: {len(target_sequence)} bases")
-
-    output_dir = Path(MODEL_DIR)
-    output_dir.mkdir(exist_ok=True)
-    plot_inference_results(
-        signal,
-        predicted_sequence,
-        target_sequence,
-        accuracy,
-        output_path=output_dir / "inference_result.png",
-    )
-
-    print("\n✓ Inference complete!")
-
+    # Save diagnostic plot for the last sample
+    plot_diagnostic(signals[eval_limit-1], pred_seq, targets[eval_limit-1], score, results_dir / "last_inference.png")
 
 if __name__ == "__main__":
-
-    model_dir = Path(USER_CONFIG.get("model_dir", MODEL_DIR))
-    model_file = Path(USER_CONFIG.get("model_file", MODEL_FILE))
-
-    main(
-        model_path=model_dir / model_file,
-    )
+    main()

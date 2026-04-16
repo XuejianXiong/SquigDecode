@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SquigDecode Input Parameters Schema",
+  "description": "Validation schema for Nanopore signal simulation and model training parameters.",
+  "type": "object",
+  "properties": {
+    "num_sequences": {
+      "description": "Total number of synthetic DNA reads to generate.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "noise_std_max": {
+      "description": "Maximum Gaussian noise (pA) to simulate high-interference runs.",
+      "type": "number",
+      "maximum": 10.0
+    },
+    "use_noise_curriculum": {
+      "description": "If true, training starts with clean signals and gradually introduces noise.",
+      "type": "boolean"
+    },
+    "train_learning_rate": {
+      "description": "Initial learning rate for the Adam optimizer.",
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 0.1
+    }
+  },
+  "required": ["num_sequences", "train_num_epochs", "random_seed"]
+}

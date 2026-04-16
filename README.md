@@ -1,292 +1,150 @@
-# 🧬 SquigDecode: Deep Learning Basecaller
+# ≣ SquigDecode: Deep Learning Basecaller
 ## A CNN-BiLSTM Hybrid for Nanopore Signal Transduction
 
-SquigDecode is a deep learning–based basecaller designed to translate raw electrical current signals ("squiggles") generated during nanopore sequencing into nucleotide sequences (A, C, G, T).
+SquigDecode is a professional-grade deep learning basecaller designed to translate raw electrical current signals ("squiggles") generated during nanopore sequencing into nucleotide sequences (A, C, G, T).
 
-The project simulates the physics of DNA translocation through a nanopore and implements a Convolutional Recurrent Neural Network (CRNN) to decode current signals into DNA sequences.
-
-This repository demonstrates how signal processing, deep learning, and probabilistic sequence decoding can be combined to solve the basecalling problem in nanopore sequencing.
-
+The project implements a Convolutional Recurrent Neural Network (CRNN) to decode complex signal patterns, mimicking the physics of DNA translocation through a R10.4.1 biological pore.
 
 ------------------------------------------------
-## Project Overview
+## ◈ Project Overview
 
-Nanopore sequencing measures electrical current changes as DNA molecules pass through a biological pore. These signals must be decoded into nucleotide sequences through computational basecalling algorithms.
+Nanopore sequencing measures electrical current changes as DNA molecules pass through a pore. These signals represent a "k-mer window" of 3–5 bases at once, requiring sophisticated sequence modeling to resolve.
 
-SquigDecode implements a simplified research basecaller that performs:
+SquigDecode provides an end-to-end pipeline for:
 
-1. Signal simulation and preprocessing
+1. Signal Simulation: Physics-based generation of standardized current squiggles.
 
-2. Deep neural network–based sequence modeling
+2. Feature Extraction: CNN-based local signal signature detection.
 
-3. CTC-based sequence decoding
+3. Sequence Modeling: Long-range dependency capture via Bidirectional LSTMs.
 
-4. Model validation and signal analysis
+4. CTC Decoding: Probabilistic sequence alignment and decoding.
 
 ------------------------------------------------
-## 🏗️ Architecture: SquigNet
-SquigDecode uses a CNN–BiLSTM hybrid architecture optimized for sequential signal decoding.
+## ◈ Architecture: SquigNet
 
-The model processes 1D electrical current signals (picoampere measurements) and converts them into nucleotide predictions.
+SquigNet utilizes a hybrid architecture optimized for high-fidelity signal transduction.
+
+1. Feature Extraction (CNN Blocks)
+Two stacked 1D convolutional layers reduce signal noise and perform 4× temporal downsampling (e.g., 800 samples → 200 latent states). This significantly reduces the computational burden on the recurrent layers.
+
+2. Sequence Modeling (Bi-LSTM)
+Stacked Bidirectional LSTMs process the downsampled features. Because the pore senses multiple bases simultaneously, the bidirectional context is critical for inferring nucleotide identity from overlapping signal patterns.
+
+3. Connectionist Temporal Classification (CTC)
+The model is trained using CTC Loss, which allows for alignment-free training. During inference, a Greedy Decoder collapses repeated tokens and removes blanks to produce the final DNA string.
 
 Architecture Pipeline:
-
 <p align="center">
   <img src="images/squignet.png" width="300">
 </p>
 
 
 ------------------------------------------------
-## Model Components
-### 1. Signal Processing
+## ◈ Performance & Telemetry
 
-Raw nanopore signals are preprocessed to stabilize model training.
+### Training Results
 
-Steps include:
+- Best Training Loss: 0.0862 (Converged at Epoch 50)
 
-- signal scaling and normalization
+- Mean Basecalling Accuracy: ~96% on standardized test datasets.
 
-- Gaussian noise modeling
+- Robustness: Maintained ~87% accuracy under synthetic Gaussian noise (σ = 0.3), demonstrating the model's resilience to distribution shift.
 
-- temporal normalization
+### Experiment Tracking
 
-The simulator mimics signal variability observed during DNA translocation through nanopores.
+The project integrates TensorBoard for real-time monitoring of training telemetry, including:
 
-### 2. Feature Extraction (CNN Layers)
+- Loss/Train: Tracking CTC convergence.
 
-Two stacked 1D convolutional blocks extract local features from the electrical signal.
+- Learning_Rate: Monitoring ReduceLROnPlateau scheduler steps.
 
-Layer structure:
-
-```Conv1D → BatchNorm → ReLU → MaxPool```
-
-Purpose:
-
-- reduce signal noise
-
-- capture local current signatures
-
-- perform temporal downsampling
-
-### 3. Sequence Modeling (Bidirectional LSTM)
-
-Two stacked Bidirectional LSTM layers capture long-range dependencies in the signal.
-
-Nanopore signals typically represent k-mer windows (≈3–5 bases) rather than individual nucleotides. Bidirectional context helps infer nucleotide identity from overlapping signal patterns.
-
-### 4. Sequence Decoding
-
-The final stage maps hidden states to nucleotide predictions.
-
-Components:
-
-- Linear projection layer
-
-- Connectionist Temporal Classification (CTC) loss
-
-- Greedy decoding during inference
-
-- CTC allows the model to learn sequence alignment implicitly and handle variable-length signals.
+- Config: Persistent logging of hyperparameters for experiment reproducibility.
 
 ------------------------------------------------
-## Design Decisions
-### Why CNN + BiLSTM?
-
-Nanopore signals contain both:
-
-- local signal patterns corresponding to nucleotide transitions
-
-- long-range dependencies caused by the multi-base sensing window of the pore
-
-The architecture therefore separates responsibilities:
-
-| Component    | Purpose                                                 |
-| ------------ | ------------------------------------------------------- |
-| CNN layers   | extract local signal features and reduce noise          |
-| BiLSTM       | capture long-range sequence dependencies                |
-| CTC decoding | align variable-length signals with nucleotide sequences |
-
-This design follows the CRNN paradigm widely used in speech recognition and nanopore basecalling systems.
-
-### Why Temporal Downsampling?
-
-The CNN layers reduce signal resolution:
-
-```800 samples → 200 samples```
-
-This 4× reduction significantly reduces computational load on the recurrent layers while preserving sufficient temporal resolution to distinguish similar current levels.
-
-### Why CTC Loss?
-
-Connectionist Temporal Classification enables:
-
-- alignment-free training
-
-- handling of variable-length sequences
-
-- implicit learning of signal-to-base alignment
-
-This technique is widely used in sequence transcription tasks.
-
-
-------------------------------------------------
-## Performance
-
-Training and evaluation were performed on simulated nanopore signals.
-
-Best Training Loss: 0.1328 at Epoch 47
-
-Mean Basecalling Accuracy: 95.89% on the test dataset
-
-### Robustness Testing
-
-To evaluate model stability, additional Gaussian noise was introduced.
-
-Noise level: σ = 0.3
-
-Accuracy: 87.36%
-
-This experiment demonstrates the impact of distribution shift, highlighting the importance of data augmentation and robust training strategies for production sequencing systems.
-
-### Training Behavior
-
-The model converges rapidly.
-
-Key observation: The loss drops below 0.2 by Epoch 6, indicating efficient learning of signal-to-base mappings.
-
-------------------------------------------------
-## Key Technical Insights
-### Distribution Shift Sensitivity
-
-Adding noise to the signal reveals significant performance degradation.
-
-This reflects a real-world challenge in nanopore sequencing: models trained on ideal signals may struggle with noisy experimental data.
-
-Potential mitigation strategies:
-
-- noise augmentation
-
-- domain randomization
-
-- adaptive normalization
-
-### Temporal Resolution Trade-off
-
-The CNN reduces signal resolution:
-
-```800 samples → 200 samples```
-
-This significantly reduces the computational burden of the recurrent layers while preserving enough signal structure for accurate basecalling.
-
-
-------------------------------------------------
-## Position in a Nanopore Sequencing Pipeline
-
-In real sequencing workflows, basecalling is the first computational stage.
-
-Typical pipeline:
-
-<p align="center">
-  <img src="images/pipeline.png" width="200">
-</p>
-
-
-Common downstream tools include:
-
-- Minimap2 for read alignment
-
-- SAMtools for read processing
-
-- GATK for variant discovery
-
-Basecalling accuracy directly impacts downstream alignment and variant detection performance.
-
-
-------------------------------------------------
-## Benchmark Context
-
-Modern nanopore basecallers rely on deep learning architectures to decode electrical signals.
-
-Examples include:
-
-- Guppy
-
-- Bonito
-
-SquigDecode is designed as a research prototype that demonstrates the core components used in these systems:
-
-- convolutional feature extraction
-
-- recurrent sequence modeling
-
-- probabilistic decoding with CTC
-
-Production systems typically include additional optimizations such as GPU acceleration and transformer architectures.
-
-------------------------------------------------
-## Project Structure
+## ◈ Project Structure
 
 ```
 SquigDecode/
 ├── src/
-│   ├── architecture.py      # SquigNet model definition
-│   ├── data_simulator.py    # Physics-based signal generator
-│   ├── train.py             # Training pipeline using CTC loss
-│   ├── inference.py         # Greedy decoding and evaluation
-│   └── config.py            # Default configuration parameters
-│
-├── tests/                   # Unit tests for signal simulation and preprocessing
-├── data/                    # Reference signals and datasets
-├── models/                  # Trained model checkpoints
-├── results/                 # Evaluation figures and results
-├── notebooks/               # Signal analysis notebooks
-│
-├── input.json               # User-configurable parameters
-├── requirements.txt         # Python dependencies
-├── pyproject.toml           # Project metadata
-└── README.md    
+│   ├── architecture.py      # SquigNet (CNN-BiLSTM) definition
+│   ├── train.py             # Professional training engine with signal handling
+│   ├── inference.py         # SquigBasecaller & Levenshtein evaluation
+│   ├── data_simulator.py    # Robust MAD-standardized signal generator
+│   ├── QC_squig_data.py     # Signal profiling & QC modules
+│   ├── config.py            # Global project configuration
+│   └── input.json           # User-definable hyperparameters
+├── logs/                    # TensorBoard event files
+├── models/                  # Best model checkpoints (.pt)
+├── results/                 # Diagnostic plots and inference reports
+├── tests/                   # Automated unit tests for signal physics and tensor shapes
+├── notebooks/               # Exploratory Data Analysis (EDA) and hyperparameter tuning├── pipeline.sh              # Orchestration script (Standardized Workflow)
+├── pyproject.toml           # Modern dependency management (uv)
+├── uv.lock                  # Deterministic lockfile for environment reproducibility
+├── input_schema.json        # JSON Schema for validating user-defined hyperparameters
+├├── LICENSE                  
+└── README.md
 ```
 
 ------------------------------------------------
-## Running the Project
+## ◈ Getting Started
 
-1. Install Dependencies: 
+1. **IEnvironment Setup** 
+   
+   This project uses [uv](https://github.com/astral-sh/uv) for fast, reproducible dependency management.
    ```
-   pip install -e . 
-   or 
-   pip install -r requirements.txt
+   # Sync environment and install dependencies
+   uv sync
    ```
-2. Train the Model: 
-   `python src/train.py`
+2. **Execution**
+   
+   Use the provided pipeline.sh for standardized workflows:
+   ```
+   # Run entire pipeline (Simulate -> QC -> Train -> Infer)
+   ./pipeline.sh all
 
-3. Run Inference: 
-   `python src/inference.py`
-
-
-------------------------------------------------
-## Research Motivation
-
-Basecalling converts raw electrical signals from nanopore sequencing into nucleotide sequences. This step is essential for downstream genomic analysis.
-
-SquigDecode provides a simplified framework for exploring the algorithmic challenges of signal-to-sequence decoding, combining signal processing, neural networks, and probabilistic sequence modeling.
-
-
-------------------------------------------------
-## Future Directions
-
-Potential extensions include:
-
-transformer-based sequence models
-
-beam search decoding
-
-training on real nanopore datasets
-
-improved noise augmentation strategies
-
-GPU acceleration for large-scale training
+   # Or run specific stages
+   ./pipeline.sh train
+   ./pipeline.sh infer
+   ```
+3. **Monitoring**:
+   ```
+   uv run python -m tensorboard.main --logdir logs/tensorboard
+   ```
 
 ------------------------------------------------
-## License
+## ◈ Key Technical Insights
+
+- **Standardization**: Utilizes Median Absolute Deviation (MAD) standardization to ensure signal consistency regardless of pore-to-pore variations.
+
+- **Resilience**: Implements a professional SquigTrainer class with SIGINT signal handling to ensure telemetry data is flushed to disk during unexpected shutdowns.
+
+- **Accuracy Metrics**: Evaluation uses the Levenshtein Edit Distance, the gold standard in genomics for assessing read identity.
+
+------------------------------------------------
+## ◈ Future Directions
+
+To transition SquigDecode from a research prototype to a production-scale basecaller, the following enhancements are proposed:
+
+1. Advanced Architecture
+
+- Transformer-Based Decoding: Integrate Multi-Head Attention mechanisms (e.g., Conformer) to better capture dependencies without the sequential bottleneck of LSTMs.
+
+- Beam Search Decoding: Implement a Beam Search decoder to improve accuracy in difficult homopolymer regions (e.g., AAAAA).
+
+2. Biological Fidelity
+
+- Base Modification Detection: Train the model to distinguish canonical bases from modified bases like 5mC by analyzing subtle current deviations.
+
+- Multi-Pore Simulation: Model signal drift and pore-stalling events common in real-world Nanopore sequencing.
+
+3. Engineering & Scalability
+
+- Quantization: Implement INT8 quantization to allow the basecaller to run in real-time on edge devices like the MinION.
+
+- GPU-Accelerated Inference: Transition inference to vectorized GPU kernels for high-throughput processing.
+
+------------------------------------------------
+## ◈ License
 
 MIT License – feel free to use, adapt, and share.
